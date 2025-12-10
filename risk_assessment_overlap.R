@@ -73,14 +73,19 @@ vul <- vul %>%
 
 # Calculate population within each of the hazard tiles 
 haz_flood_pop <- exactextractr::exact_extract(raster(pop),st_as_sf(haz_flood),
-                                              fun ='sum',
-                                              append_cols = T) 
-# Rename population counts
+                                              fun ='sum')
+# Merge the population counts with the tile layer
 haz_flood_pop <- haz_flood_pop %>% 
-  rename(wpop2025 = sum)
+  cbind(haz_flood,.) %>% 
+  rename(wpop_2025 = y)
 
 global(pop, fun = "sum", na.rm = TRUE)
-sum(haz_flood_pop$wpop2025)
+sum(haz_flood_pop$wpop_2025)
 
 # Intersect with Vulnerability 
+# The result is the tile hazard layer including all the information from the district
+# layer that will help us to aggregate exposure at district level.
+
+## 2.3 Calculate population within exposure areas by district.
+
 risk <- intersect(haz_flood_pop, vul)
