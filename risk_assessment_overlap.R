@@ -67,25 +67,62 @@ ggplot(data = haz_flood) +
        subtitle = "Categorizado por Intensidad")
 
 ## 2.2 Intersect vul and hazard and pop ----
-# Simplify vulnerability layer ----
+# Simplify vulnerability layer
 vul <- vul %>% 
   select(c(NA3, NAM, D1, D2, D3, IVMC))
 
-# Calculate population within each of the hazard tiles 
-haz_flood_pop <- exactextractr::exact_extract(raster(pop),st_as_sf(haz_flood),
+# Intersect with Vulnerability 
+# The result is the tile hazard layer including all the information from the district
+# layer that will help us to aggregate exposure at district level.
+risk <- terra::intersect(haz_flood, vul)
+names(risk)
+
+# Calculate population within each of the tiles intersected with the district layer 
+haz_flood_pop <- exactextractr::exact_extract(raster(pop),st_as_sf(risk),
                                               fun ='sum')
+
 # Merge the population counts with the tile layer
 haz_flood_pop <- haz_flood_pop %>% 
-  cbind(haz_flood,.) %>% 
+  cbind(risk,.) %>% 
   rename(wpop_2025 = y)
 
 global(pop, fun = "sum", na.rm = TRUE)
 sum(haz_flood_pop$wpop_2025)
 
-# Intersect with Vulnerability 
-# The result is the tile hazard layer including all the information from the district
-# layer that will help us to aggregate exposure at district level.
 
-## 2.3 Calculate population within exposure areas by district.
+# Summarise to obtain vulnerability and exposure results on a table at 
+# District level
+risk_dist <- haz_flood_pop %>% 
+  as.data.frame() %>% 
+  group_by(NA3, risk_class) %>% 
+  summarise(wpop_risk = sum(wpop_2025, na.rm = TRUE))
 
-risk <- intersect(haz_flood_pop, vul)
+# Merge with district layer
+risk_dist <- merge(risk_dist, vul, by = 'NA3')
+  
+risk_dist_wide <- risk_dist %>% 
+  pivot_wider(
+    names_from = risk_class,
+    values_from = wpop_risk,
+    values_fill = 0) %>% 
+  select(c(NA3, Extremo, Alto, Medio, Bajo)) %>% 
+  mutate(wpop_risk = Extremo + Alto + Medio + Bajo, # to calculate total population per district
+         per_flood_extremo = Extremo / wpop_risk,
+         per_flood_alto = Alto / wpop_risk,
+         per_flood_medio = Medio / wpop_risk,
+         per_flood_bajo = Bajo / wpop_risk) %>% 
+  rename(flood_extremo = Extremo,
+         flood_alto = Alto,
+         flood_medio = Medio,
+         flood_bajo = Bajo)
+
+nrow(risk_dist_wide)
+
+
+
+## 2.3 Join table to spatial ----
+# Layer at district level  
+risk_layer_dist <- merge(vul,risk_dist_wide, by = 'NA3')
+
+
+
