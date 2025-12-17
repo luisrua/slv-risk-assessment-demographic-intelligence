@@ -137,7 +137,7 @@ nrow(risk_dist_wide)
 # Layer at district level  
 risk_layer_dist <- merge(vul,risk_dist_wide, by = 'NA3')
 
-# writeVector(risk_layer_dist, 
+# writeVector(risk_layer_dist,
 #             paste0(layers,"risk_assessment/slv_risk_assessment_districts.gpkg"),
 #             layer ='floods',
 #             overwrite=T)
@@ -175,6 +175,11 @@ write.xlsx(as.data.frame(risk_layer_tile),
 
 ## 3.1 Flood Risk Bivariate Map ----
 # --- Prepare Data & Palette ---
+
+# Importing lac admin boundaries 
+ab <- vect(paste0(dir,"layers/lac_ab_pol_4326.gpkg"), layer = "lac_ab_pol_4326" )
+ab <-  st_make_valid(st_as_sf(ab))
+plot(ab)
 
 # Testing custom palette
 # This palette moves from Light Grey (Low-Low) to Blue (High Flood) and Orange (High Vuln),
@@ -227,7 +232,40 @@ ggsave(filename = "flood_biv_legend.png", plot = legend, bg = "transparent",
 # --- 3. Plot Map  ---
 tmap_mode("plot")
 
-flood_bivar_map <- tm_shape(data_bivariate) +
+# Turning it off switches R to a "flat" mode (GEOS) which is much more forgiving of minor topology errors.
+sf::sf_use_s2(FALSE) 
+
+# Remove El Salvador from bkground layer
+ab <- ab %>%
+  filter(GID_0 != "SLV")
+
+# Layers for high risk districts
+high_risk_labels <- data_bivariate %>% 
+  filter(bi_class == "3-3")
+# Increase bbox to fit labels at the edges of the map# 1. Create a slightly larger bounding box (e.g., 5% bigger)
+bbox_new <- st_bbox(data_bivariate) # Get original box
+
+# Manually expand the limits (xmin, ymin, xmax, ymax)
+# This calculates the width/height and subtracts/adds 5% to the edges
+x_range <- bbox_new["xmax"] - bbox_new["xmin"]
+y_range <- bbox_new["ymax"] - bbox_new["ymin"]
+
+bbox_new["xmin"] <- bbox_new["xmin"] - (0.05 * x_range)
+bbox_new["xmax"] <- bbox_new["xmax"] + (0.05 * x_range)
+bbox_new["ymin"] <- bbox_new["ymin"] - (0.05 * y_range)
+bbox_new["ymax"] <- bbox_new["ymax"] + (0.05 * y_range)
+
+# Set the map
+flood_bivar_map <-
+  # Background map
+  tm_shape(ab, bbox = bbox_new) +
+  tm_polygons(
+    fill = "#f0f0f0",  
+    col = "black",      
+    lwd = 0.3           
+  ) +
+  # Main bivariate map
+  tm_shape(data_bivariate) +
   tm_polygons(
     fill = "bi_class",
     fill.scale = tm_scale_categorical(values = custom_pal_red, value.na = "grey"),
@@ -235,10 +273,27 @@ flood_bivar_map <- tm_shape(data_bivariate) +
     col = "black",
     col_alpha = 0.5,
     lwd = 0.1
-  ) +
+  ) + 
+  # Labels for high risk districts
+  tm_shape(high_risk_labels) +
+  tm_labels_highlighted(
+    text = "NAM",   # <--- Make sure this matches your column name (e.g., NAM_ADM2)
+    size = 0.7,
+    col = "black",
+      bgcol = "white",  
+      bgcol_alpha = 0.7,
+    options = opt_tm_labels(just = "center") 
+    ) +
+  
   tm_title("Flood Exposure vs Vulnerability") + 
   tm_logo("flood_biv_legend.png", height = 5.5, position = c("left", "bottom")) +
-  tm_layout(frame = FALSE)
+  tm_layout(
+    frame = FALSE,
+    bg.color = "#dbf1ff"  # Light blue "Sea" color
+    # inner.margins = c(0.1, 0.1, 0.1, 0.1) # Optional: Adds space between map and edge
+  )
+
+flood_bivar_map
 
 tmap_save(
   tm = flood_bivar_map, 
@@ -278,36 +333,55 @@ data_bivariate$bi_y <- str_sub(data_bivariate$bi_class, 3, 3)
 breaks <- bi_class_breaks(data_bivariate, 
                           x = flood_jitter,   # Your actual Risk column name
                           y = IVMC_jitter, # Your actual Vuln column name
-                          style = "quantile",        # Must match your previous code
+                          style = "fisher",        # Must match your previous code
                           dim = 3)
 
-risk_labels_text <- breaks$bi_x 
+exp_labels_text <- breaks$bi_x 
 vuln_labels_text <- breaks$bi_y
 
 # Trim label texts to remove negative values
-risk_labels_text[1] <- 0 
+exp_labels_text[1] <- 0 
 vuln_labels_text[1] <- 0 
 
 # Verify they look right
-print(risk_labels_text) 
+print(exp_labels_text) 
 print(vuln_labels_text)
 # Should output: [1] "0-0.0821" "0.0821-0.327" "0.327-0.67"
 
 # 2. Map Flood Risk (using the auto-generated labels)
-map_risk <- tm_shape(data_bivariate) +
+map_flood_exp <- 
+  tm_shape(ab, bbox = data_bivariate) +
+  tm_polygons(
+    fill = "#f0f0f0",  
+    col = "black",      
+    lwd = 0.3           
+  ) +
+  tm_shape(data_bivariate) +
   tm_polygons(
     fill = "bi_x",
     fill.scale = tm_scale_categorical(
       values = clean_risk_pal,         
-      labels = risk_labels_text        # <--- Use the text directly
+      labels = exp_labels_text        # <--- Use the text directly
     ),
     fill.legend = tm_legend(title = "Flood Exposure"),
     col = "black", lwd = 0.1
   ) +
-  tm_title("Component 1: Flood Exposure (pop ratio)")
+  tm_title("Component 1: Flood Exposure (pop ratio)") +
+  tm_layout(
+    frame = FALSE,
+    bg.color = "#dbf1ff"  # Light blue "Sea" color
+    # inner.margins = c(0.1, 0.1, 0.1, 0.1) # Optional: Adds space between map and edge
+  )
 
 # 3. Map Vulnerability (using the auto-generated labels)
-map_vuln <- tm_shape(data_bivariate) +
+map_vuln <- 
+  tm_shape(ab, bbox = data_bivariate) +
+  tm_polygons(
+    fill = "#f0f0f0",  
+    col = "black",      
+    lwd = 0.3           
+  ) +
+  tm_shape(data_bivariate) +
   tm_polygons(
     fill = "bi_y",
     fill.scale = tm_scale_categorical(
@@ -317,21 +391,98 @@ map_vuln <- tm_shape(data_bivariate) +
     fill.legend = tm_legend(title = "Vulnerability Score - IVMC"),
     col = "black", lwd = 0.1
   ) +
-  tm_title("Component 2: Vulnerability - IVMC")
+  tm_title("Component 2: Vulnerability - IVMC") + 
+  tm_layout(
+    frame = FALSE,
+    bg.color = "#dbf1ff"  # Light blue "Sea" color
+    # inner.margins = c(0.1, 0.1, 0.1, 0.1) # Optional: Adds space between map and edge
+  )
 
 # 4. Display Side-by-Side
-final_comparison <- tmap_arrange(map_risk, map_vuln, ncol = 2)
+final_comparison <- tmap_arrange(map_flood_exp, map_vuln, ncol = 2)
 print(final_comparison)
 
 # 2. Save it using tmap_save
 tmap_save(
   tm = final_comparison, 
-  filename = paste0(dir,"maps/fl_hazard_vs_Vuln_Comparison.jpg"), 
+  filename = paste0(dir,"maps/fl_hazard_vs_IVMC.jpg"), 
   width = 12,      # Width in inches
   height = 6,      # Height in inches
   units = "in",    # Unit for width/height
   dpi = 300        # Resolution (300 is print quality)
 )
+
+## 3.3 Map the 3 Vulnerability Dimensions 
+dist_to_map <- c("D1", "D2", "D3")
+
+palettes <- c(c("Purples", "Greens", "Oranges"))
+
+titles <- c("Dimensión 1: Vulnerabilidad", 
+            "Dimensión 2: Adaptabilidad",
+            "Dimensión 3: Diferencial Demográfico")
+
+for (i in 1:length(dims_to_map)) {
+  
+  # Current variables for this iteration
+  var_name <- dims_to_map[i]
+  pal_name <- palettes[i]
+  map_title <- titles[i]
+  
+  print(paste("Mapping:", var_name))
+  
+  # Build the Map
+  vulnerability_map <- 
+    # --- Context Layer (Sea & Neighbors) ---
+    tm_shape(ab, bbox = bbox_new) + # Uses your expanded bbox
+    tm_polygons(fill = "#f0f0f0", col = "black", lwd = 0.3) +
+    
+    # --- Main Data Layer ---
+    tm_shape(data_bivariate) +
+    tm_polygons(
+      fill = var_name,
+      
+      # Quantile Scale with Specific Palette
+      fill.scale = tm_scale_intervals(
+        style = "quantile", 
+        n = 5,                 # 5 classes (Quintiles)
+        values = pal_name,     # The unique color ramp
+        value.na = "transparent"
+      ),
+      
+      col = "black", 
+      lwd = 0.1, 
+      col_alpha = 0.5,
+      fill.legend = tm_legend(title = "") # Clean legend
+    ) +
+    
+    # --- Layout ---
+    tm_title(map_title) +
+    tm_layout(
+      frame = FALSE, 
+      bg.color = "#dbf1ff",
+      legend.position = c("left", "bottom")
+    )
+}
+
+
+### 3.3.1 D1 Vulnerabilidad
+map_viln_d1 <-  
+  tm_shape(ab, bbox = data_bivariate) +
+  tm_polygons(
+    fill = "#f0f0f0",  
+    col = "black",      
+    lwd = 0.3           
+  ) +
+  tm_shape(data_bivariate) +
+  tm_polygons(
+    fill = "bi_y",
+    fill.scale = tm_scale_categorical(
+      values = clean_vuln_pal,         
+      labels = vuln_labels_text        # <--- Use the text directly
+    ),
+    fill.legend = tm_legend(title = "Dimensión1: Vulnerabilidad"),
+    col = "black", lwd = 0.1
+  ) 
 
 # 4. WORKING AROUND OUTPUTS ===================================================
 ## 4.1 Export layers to map risk in QGIS ----
@@ -343,7 +494,9 @@ writeVector(vect(data_bivariate), paste0(dir,"layers/risk_assessment/slv_risk_as
 # Mejorar mapa bivariable. Incluir fronteras paises alrededor, bkground azul para visualizar mar
 # anadir etiquetas en distritos alto riesgo
 
-# export data_bivariate into gpkg to create maps on qGIS
+# Sacar tablas de resultados y graficos para exportar en imagen
+
+# export data_bivariate into gpkg to create maps on qGIS, it is not gonna work better produce maps on R directly
 # Generar tablas de resultados en excel con nombres de variables limpios
 # Generar maps para los otros subniveles de vulnerabilidad
 # Hablar con J Luis a ver como van los otros escenarios
