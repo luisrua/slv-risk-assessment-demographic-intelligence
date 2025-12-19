@@ -708,7 +708,7 @@ top_10_risk_pop_chart <- ggplot(top_risk_pop,
   geom_col(fill = "orange", width = 0.7) + 
   
   # Add risk percentage labels to the end of the bars
-  geom_text(aes(label = round(pop_risk_ext_alt,0)), 
+  geom_text(aes(label = scales::comma(round(pop_risk_ext_alt,0), accuracy = 1)), 
             hjust = -0.1, 
             size = 3,
             col = "#333333") +
@@ -726,7 +726,12 @@ top_10_risk_pop_chart <- ggplot(top_risk_pop,
     plot.title = element_text(hjust = 0.5, face = "bold"),
     axis.title.x = element_text(margin = margin(t = 10)),
     axis.title.y = element_text(margin = margin(r = 10))
-  ) 
+  ) +
+  # Add separator to X-axis and expand limits slightly for labels
+  scale_x_continuous(
+    labels = scales::comma, 
+    limits = c(0, max(top_risk_pop$pop_risk_ext_alt) * 1.15) # Expand 15% to fit text
+  )
 
 top_10_risk_pop_chart
 
@@ -740,6 +745,10 @@ ggsave(
   dpi = 300,    # High resolution for reports
   bg = "white"  # CRITICAL: Ensures white background instead of transparent/black
 ) 
+
+### 4.3.3 Top Flood Risk Districts Vulnerability factors display.
+
+
 # Graph 
 # TO DO
 
