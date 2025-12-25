@@ -708,10 +708,13 @@ top_10_risk_pop_chart <- ggplot(top_risk_pop,
   geom_col(fill = "orange", width = 0.7) + 
   
   # Add risk percentage labels to the end of the bars
-  geom_text(aes(label = scales::comma(round(pop_risk_ext_alt,0), accuracy = 1)), 
+  geom_label(aes(label = scales::comma(round(pop_risk_ext_alt,0), accuracy = 1)), 
             hjust = -0.1, 
             size = 3,
-            col = "#333333") +
+            col = "#333333",
+            fill = 'white',
+            label.size = 0
+            ) +     # Removes the black border
   
   # Set chart title and axis labels
   labs(
