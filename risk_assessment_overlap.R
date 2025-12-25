@@ -5,6 +5,10 @@
 
 # SETTINGS =====================================================================
 
+# Clean workspace
+rm(list = ls())
+gc()
+
 # libraries loaded from the script below that also deals with conflicts
 
 source("setup.R")
@@ -14,6 +18,7 @@ library(tmap)
 library(biscale)
 library(cowplot)
 library(stringi) # to clean latin encoding
+library(ggplot2)
 
 # Paths
 
@@ -23,7 +28,17 @@ temp <- paste0(dir, "temp/") # temporary files and trash
 
 # 1. IMPORT ALL THE ELEMENTS ==================================================
 # Vulnerability by District with all the 3 dimensions and composed index IVMC
-vul <- vect(paste0(layers,"indices de vulnerabilidad slv/indices VMC.shp"))
+vul <- vect(paste0(layers,"indices VMC.shp"))
+# import the vulnerability layer that contains de right district names. Old vulnerability layer
+vul_names <- vect(paste0(layers,"indices de vulnerabilidad slv/indices VMC.shp")) %>% 
+  select(c(NAM, NA3)) %>% 
+  mutate(across(where(is.character), function(x) {
+    # Try to repair common Spanish encoding issues (Latin1 -> UTF-8)
+    fixed_text <- iconv(x, from = "latin1", to = "UTF-8")
+    # If iconv fails (returns NA), keep the original text but strip bad bytes
+    # ifelse(is.na(fixed_text), iconv(x, to = "UTF-8", sub = ""), fixed_text)
+  }))
+
 
 vul<- vul %>% 
 mutate(across(where(is.character), function(x) {
@@ -33,40 +48,104 @@ mutate(across(where(is.character), function(x) {
   # ifelse(is.na(fixed_text), iconv(x, to = "UTF-8", sub = ""), fixed_text)
 }))
 
+vul <- vul %>% 
+  select(-NAM) %>% 
+  merge(.,vul_names, by = "NA3")
+
 # Population input - use Worldpop 2025 for the moment
 # https://hub.worldpop.org/geodata/summary?id=73247
 pop <- rast(paste0(layers,"slv_pop_2025_CN_100m_R2025A_v1.tif"))
 
 # Hazard Areas from Google embedding and AI to determine 
-haz_flood <- vect(paste0(layers,"capas susceptibilidad/Susceptibilidad_Inundación_SV_dc05251724.shp"))
+haz <- vect(paste0(layers,"SusceptibilidadInundaciónDeslaveSequía_SV_N.shp"))
 
 # Check CRS is the same for the 3 layers
 crs(vul) == crs(pop)
-crs(haz_flood) == crs(pop)
-crs(haz_flood) == crs(vul)
+crs(haz) == crs(pop)
+crs(haz) == crs(vul)
 
 # Reproject everything to the raster projection as it is easier to reproject vector layers
 vul <- project(vul, crs(pop))
-haz_flood <- project(haz_flood, crs(pop))
+haz <- project(haz, crs(pop))
 
 # Check again
 crs(vul) == crs(pop)
-crs(haz_flood) == crs(pop)
-crs(haz_flood) == crs(vul)
+crs(haz) == crs(pop)
+crs(haz) == crs(vul)
+
+# Strip down haz layer removing unnecessary fields
+haz <- haz %>% 
+  select(c(risk_flood ,risk_lands, risk_droug, RiskFloodN,
+           RiskLandN, RiskDrouN))
+# Reclass Exposure classes based on thresholds
+# For floods. Flood
+  # Bajo	0 - 3.694764
+  # MEdio	3.694765 - 4.294008
+  # Alto	4.29409 - 5.866357
+  # Extremo	5.866358 - 10.0000
+
+  # LandSlides
+  # Bajo 0 - 2.60673
+  # Medio	2.60674 - 4.252207
+  # Alto	4.252208 - 5.3763989
+  # Extremo	5.3763990 - 10.00000
+  # 
+  # Droughts
+  # Bajo	0 - 3.203229
+  # MEdio	3.203230 - 4.962889
+  # Alto	4.962890 - 6.397829
+  # Extremo	6.397830 - 10.0000
+
+haz <- haz %>% 
+  mutate(
+    # Flood Risk
+    fl_risk_class = case_when(
+      RiskFloodN >= 0 & RiskFloodN <= 3.694764 ~ "Bajo",
+      RiskFloodN > 3.694764 & RiskFloodN <= 4.294008 ~ "Medio",
+      RiskFloodN > 4.294008 & RiskFloodN <= 5.866357 ~ "Alto",
+      RiskFloodN > 5.866357 & RiskFloodN <= 10.0000 ~ "Extremo",
+      TRUE ~ NA_character_
+    ),
+    
+    # Landslide Risk (Fixed typos and syntax)
+    ls_risk_class = case_when(
+      RiskLandN >= 0 & RiskLandN <= 2.60673 ~ "Bajo",
+      RiskLandN > 2.60673 & RiskLandN <= 4.252207 ~ "Medio", # Removed extra comma before ~
+      RiskLandN > 4.252207 & RiskLandN <= 5.3763989 ~ "Alto",
+      RiskLandN > 5.3763989 & RiskLandN <= 10.0000 ~ "Extremo",
+      TRUE ~ NA_character_
+    ),
+    
+    # Drought Risk
+    dr_risk_class = case_when(
+      RiskDrouN >= 0 & RiskDrouN <= 3.203229 ~ "Bajo",
+      RiskDrouN > 3.203229 & RiskDrouN <= 4.962889 ~ "Medio",
+      RiskDrouN > 4.962889 & RiskDrouN <= 6.397829 ~ "Alto",
+      RiskDrouN > 6.397829 & RiskDrouN <= 10.0000 ~ "Extremo",
+      TRUE ~ NA_character_
+    )
+  )
+
+
 
 # 2. PROCESS HAZARD INFORMATION ===============================================
 
 ## 2.1 Plot hazard data using categories ----
 
 # Force the specific order of the categories
-haz_flood$risk_class <- factor(haz_flood$risk_class, 
+haz$fl_risk_class <- factor(haz$fl_risk_class, 
                                levels = c("Bajo", "Medio", "Alto", "Extremo"))
 
-library(ggplot2)
+haz$ls_risk_class <- factor(haz$ls_risk_class, 
+       levels = c("Bajo", "Medio", "Alto", "Extremo"))
 
-ggplot(data = haz_flood) +
+haz$dr_risk_class <- factor(haz$ls_risk_class, 
+       levels = c("Bajo", "Medio", "Alto", "Extremo"))
+
+
+flood_hazard <- ggplot(data = haz) +
   # 1. Plot the geometry with no borders (color = NA)
-  geom_sf(aes(fill = risk_class), color = NA) +
+  geom_sf(aes(fill = fl_risk_class), color = NA) +
   scale_fill_manual(
       values = c(
         "Bajo"    = "#eff3ff",  
@@ -80,83 +159,155 @@ ggplot(data = haz_flood) +
   labs(title = "Evaluación de Amenaza de Inundación",
        subtitle = "Categorizado por Intensidad")
 
+landslide_hazard <- ggplot(data = haz) +
+  # 1. Plot the geometry with no borders (color = NA)
+  geom_sf(aes(fill = ls_risk_class), color = NA) +
+  scale_fill_manual(
+    values = c(
+      "Bajo"    = "#edf8e9",  
+      "Medio"   = "#bae4b3",  
+      "Alto"    = "#74c476",  
+      "Extremo" = "#238b45"
+    ), 
+    name = "Nivel de Amenaza" # Updated legend title to Spanish
+  ) +
+  theme_minimal() +
+  labs(title = "Evaluación de Amenaza de Deslizamiento de Tierra",
+       subtitle = "Categorizado por Intensidad")
+
+landslide_drought <- ggplot(data = haz) +
+  # 1. Plot the geometry with no borders (color = NA)
+  geom_sf(aes(fill = dr_risk_class), color = NA) +
+  scale_fill_manual(
+    values = c(
+      "Bajo"    = "#fff5eb",  
+      "Medio"   = "#fdbe85",  
+      "Alto"    = "#fd8d3c",  
+      "Extremo" = "#d94701"
+    ), 
+    name = "Nivel de Amenaza" # Updated legend title to Spanish
+  ) +
+  theme_minimal() +
+  labs(title = "Evaluación de Amenaza de Sequía",
+       subtitle = "Categorizado por Intensidad")
+
+
 ## 2.2 Intersect vul and hazard and pop ----
 # Simplify vulnerability layer
 vul <- vul %>% 
-  select(c(NA3, NAM, D1, D2, D3, IVMC))
+  select(-c(UID, ASD, COD, NA2, PPL, ACC,
+            CCN, SDV, SDP, SRT, TXT))
 
 # Intersect with Vulnerability 
 # The result is the tile hazard layer including all the information from the district
 # layer that will help us to aggregate exposure at district level.
-risk <- terra::intersect(haz_flood, vul)
+risk <- terra::intersect(haz, vul)
 names(risk)
 
 # Calculate population within each of the tiles intersected with the district layer 
-haz_flood_pop <- exactextractr::exact_extract(raster(pop),st_as_sf(risk),
+risk_pop <- exactextractr::exact_extract(raster(pop),st_as_sf(risk),
                                               fun ='sum')
 
 # Merge the population counts with the tile layer
-haz_flood_pop <- haz_flood_pop %>% 
+risk_pop <- risk_pop %>% 
   cbind(risk,.) %>% 
   rename(wpop_2025 = y)
 
 global(pop, fun = "sum", na.rm = TRUE)
-sum(haz_flood_pop$wpop_2025)
+sum(risk_pop$wpop_2025, na.rm = T)
 
 # Summarise to obtain vulnerability and exposure results on a table at 
 # District level
-risk_dist <- haz_flood_pop %>% 
+risk_dist_fl <- risk_pop %>% 
   as.data.frame() %>% 
-  group_by(NA3, risk_class) %>% 
-  summarise(wpop_risk = sum(wpop_2025, na.rm = TRUE))
+  group_by(NA3, fl_risk_class) %>% 
+  summarise(wpop_fl_risk = sum(wpop_2025, na.rm = TRUE)) 
 
-# Merge with district layer to 
-risk_dist <- merge(risk_dist, vul, by = 'NA3')
+risk_dist_dr <- risk_pop %>% 
+  as.data.frame() %>%
+  group_by(NA3, dr_risk_class) %>% 
+  summarise(wpop_dr_risk = sum(wpop_2025, na.rm = TRUE)) 
+
+risk_dist_ls <- risk_pop %>% 
+  as.data.frame() %>%
+  group_by(NA3, ls_risk_class) %>% 
+  summarise(wpop_ls_risk = sum(wpop_2025, na.rm = TRUE)) 
+
   
-risk_dist_wide <- risk_dist %>% 
+risk_dist_fl_wide <- risk_dist_fl %>% 
   pivot_wider(
-    names_from = risk_class,
-    values_from = wpop_risk,
+    names_from = fl_risk_class,
+    values_from = wpop_fl_risk,
     values_fill = 0) %>%
   select(c(NA3, Extremo, Alto, Medio, Bajo)) %>% 
-  mutate(wpop_risk = Extremo + Alto + Medio + Bajo, # to calculate total population per district
-         per_flood_extremo = Extremo / wpop_risk,
-         per_flood_alto = Alto / wpop_risk,
-         per_flood_medio = Medio / wpop_risk,
-         per_flood_bajo = Bajo / wpop_risk) %>% 
+  mutate(wpop = Extremo + Alto + Medio + Bajo, # to calculate total population per district
+         per_flood_extremo = Extremo / wpop,
+         per_flood_alto = Alto / wpop,
+         per_flood_medio = Medio / wpop,
+         per_flood_bajo = Bajo / wpop) %>% 
   rename(flood_extremo = Extremo,
          flood_alto = Alto,
          flood_medio = Medio,
-         flood_bajo = Bajo)
+         flood_bajo = Bajo)%>% 
+  merge(vul,., by = 'NA3')
 
-nrow(risk_dist_wide)
 
 
+risk_dist_dr_wide <- risk_dist_dr %>% 
+  pivot_wider(
+    names_from = dr_risk_class,
+    values_from = wpop_dr_risk,
+    values_fill = 0) %>% 
+  select(c(NA3, Extremo, Alto, Medio, Bajo)) %>% 
+  mutate(wpop = Extremo + Alto + Medio + Bajo, # to calculate total population per district
+         per_drought_extremo = Extremo / wpop,
+         per_drought_alto = Alto / wpop,
+         per_drought_medio = Medio / wpop,
+         per_drought_bajo = Bajo / wpop) %>% 
+  rename(drought_extremo = Extremo,
+         drought_alto = Alto,
+         drought_medio = Medio,
+         drought_bajo = Bajo)%>% 
+  merge(vul,., by = 'NA3')
+  
+risk_dist_ls_wide <- risk_dist_ls %>%
+  pivot_wider(
+    names_from = ls_risk_class,
+    values_from = wpop_ls_risk,
+    values_fill = 0) %>% 
+  mutate(wpop = Extremo + Alto + Medio + Bajo, # to calculate total population per district
+         per_landslide_extremo = Extremo / wpop,
+         per_landslide_alto = Alto / wpop,
+         per_landslide_medio = Medio / wpop,
+         per_landslide_bajo = Bajo / wpop) %>% 
+  rename(landslide_extremo = Extremo,
+         landslide_alto = Alto,
+         landslide_medio = Medio,
+         landslide_bajo = Bajo) %>% 
+  merge(vul,., by = 'NA3')
 
 ## 2.3 Join table to spatial ----
-# Layer at district level  
-risk_layer_dist <- merge(vul,risk_dist_wide, by = 'NA3')
 
-# writeVector(risk_layer_dist,
+# THESE ARE THE BASE FOR THE LAYERS AND THE EXCEL TABLES.
+risk_layer_fl_dist <- risk_dist_fl_wide
+risk_layer_dr_dist <- risk_dist_dr_wide
+risk_layer_ls_dist <- risk_dist_ls_wide
+
+# writeVector(risk_layer_fl_dist,
 #             paste0(layers,"risk_assessment/slv_risk_assessment_districts.gpkg"),
 #             layer ='floods',
 #             overwrite=T)
 
-# Layer at tile level (for hotspots mapping)
-# I can use this to highlight spots where there is population exposed that
-# included in vulnerable districts
-risk_layer_tile <- haz_flood_pop %>% 
-  rename(pop_exp_flood = wpop_2025)
-
-# writeVector(risk_layer_tile, 
-#             paste0(layers,"risk_assessment/slv_risk_assessment_tile.gpkg"),
-#             layer ='floods_tile',
+# writeVector(risk_layer_dr_dist,
+#             paste0(layers,"risk_assessment/slv_risk_assessment_districts.gpkg"),
+#             layer ='droughts',
 #             overwrite=T)
 
-write.xlsx(as.data.frame(risk_layer_tile),
-           file = paste0(dir,"tables/slv_risk_assessment_districts.xlsx"),
-           sheetName = "flood_risk",
-           overwrite = TRUE)
+# writeVector(risk_layer_ls_dist,
+#             paste0(layers,"risk_assessment/slv_risk_assessment_districts.gpkg"),
+#             layer ='landslides',
+#             overwrite=T)
+
 
 # 3. MAPPING RESULTS ===========================================================
 
@@ -184,11 +335,11 @@ custom_pal_red <- c(
 )
 
 # --- 1. Prepare Data & Palette (Same as before) ---
-risk_layer_biv <- risk_layer_dist %>% 
+risk_layer_biv_fl <- risk_layer_fl_dist %>% 
   mutate(flood_exp_ext_alt = per_flood_extremo + per_flood_alto)
 
 # Add a tiny random number to the problematic columns
-risk_layer_biv <- risk_layer_biv %>%
+risk_layer_biv_fl <- risk_layer_biv_fl %>%
   filter(!is.na(IVMC) & !is.na(flood_exp_ext_alt)) %>% # Remove NAs to create the legend
   mutate(
     # factor = 0.001 adds microscopic noise to separate identical values
@@ -203,7 +354,7 @@ data_bivariate <- bi_class(st_as_sf(risk_layer_biv),
                            dim = 3)
 
 # --- 2. Create High-Res Legend (Same as before) ---
-legend <- bi_legend(pal = custom_pal_red,
+legend_fl <- bi_legend(pal = custom_pal_red,
                     dim = 3,
                     xlab = "Mayor Amenaza Inundaciones",
                     ylab = "Mayor Vulnerabilidad",
@@ -212,6 +363,7 @@ legend <- bi_legend(pal = custom_pal_red,
     axis.title.x = element_text(size = 18), # Customize X label
     axis.title.y = element_text(size = 18, angle = 90)  # Customize Y label
   )
+
 
 ggsave(filename = "flood_biv_legend.png", plot = legend, bg = "transparent", 
        width = 4, height = 4, units = "in", dpi = 500)
