@@ -368,7 +368,7 @@ legend_fl <- bi_legend(pal = custom_pal_red,
     axis.title.y = element_text(size = 18, angle = 90)  # Customize Y label
   )
 
-ggsave(filename = "flood_biv_legend.png", plot = legend, bg = "transparent", 
+ggsave(filename = "flood_biv_legend.png", plot = legend_fl, bg = "transparent", 
        width = 4, height = 4, units = "in", dpi = 500)
 
 legend_dr <- bi_legend(pal = custom_pal_red,
@@ -381,7 +381,7 @@ legend_dr <- bi_legend(pal = custom_pal_red,
     axis.title.y = element_text(size = 18, angle = 90)  # Customize Y label
   )
 
-ggsave(filename = "dr_biv_legend.png", plot = legend, bg = "transparent", 
+ggsave(filename = "dr_biv_legend.png", plot = legend_dr, bg = "transparent", 
        width = 4, height = 4, units = "in", dpi = 500)
 
 legend_ls <- bi_legend(pal = custom_pal_red,
@@ -394,7 +394,7 @@ legend_ls <- bi_legend(pal = custom_pal_red,
     axis.title.y = element_text(size = 18, angle = 90)  # Customize Y label
   )
 
-ggsave(filename = "ls_biv_legend.png", plot = legend, bg = "transparent", 
+ggsave(filename = "ls_biv_legend.png", plot = legend_ls, bg = "transparent", 
        width = 4, height = 4, units = "in", dpi = 500)
 
 
@@ -414,7 +414,7 @@ high_risk_labels_fl <- data_bivariate_fl %>%
   filter(bi_class == "3-3")
 
 # Increase bbox to fit labels at the edges of the map# 1. Create a slightly larger bounding box (e.g., 5% bigger)
-bbox_new <- st_bbox(data_bivariate) # Get original box
+bbox_new <- st_bbox(data_bivariate_fl) # Get original box
 
 # Manually expand the limits (xmin, ymin, xmax, ymax)
 # This calculates the width/height and subtracts/adds 5% to the edges
