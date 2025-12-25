@@ -334,26 +334,30 @@ custom_pal_red <- c(
   "3-3" = "#eb090b"  # High Flood, High Vuln (RED - High Risk)
 )
 
-# --- 1. Prepare Data & Palette (Same as before) ---
+### --- 3.1.1 Prepare Data & Palette (Same as before) ----
 risk_layer_biv_fl <- risk_layer_fl_dist %>% 
   mutate(flood_exp_ext_alt = per_flood_extremo + per_flood_alto)
 
-# Add a tiny random number to the problematic columns
-risk_layer_biv_fl <- risk_layer_biv_fl %>%
-  filter(!is.na(IVMC) & !is.na(flood_exp_ext_alt)) %>% # Remove NAs to create the legend
-  mutate(
-    # factor = 0.001 adds microscopic noise to separate identical values
-    IVMC_jitter = jitter(IVMC, factor = 0.001), 
-    flood_jitter = jitter(flood_exp_ext_alt, factor = 0.001)
-  )
+# # Add a tiny random number to the problematic columns
+# risk_layer_biv_fl <- risk_layer_biv_fl %>%
+#   filter(!is.na(IVMC) & !is.na(flood_exp_ext_alt)) %>% # Remove NAs to create the legend
+#   mutate(
+#     # factor = 0.001 adds microscopic noise to separate identical values
+#     IVMC_jitter = jitter(IVMC, factor = 0.001), 
+#     flood_jitter = jitter(flood_exp_ext_alt, factor = 0.001)
+#   )
 
-data_bivariate <- bi_class(st_as_sf(risk_layer_biv),
-                           x = flood_jitter,
-                           y = IVMC_jitter,
+#My variables are already categorical we do not need this
+
+
+data_bivariate_fl <- bi_class(st_as_sf(risk_layer_biv_fl),
+                           x = flood_exp_ext_alt,
+                           y = VUL_P,
                            style = "fisher",
-                           dim = 3)
+                           dim = 3) %>% 
+  filter(NA3 != '0000')
 
-# --- 2. Create High-Res Legend (Same as before) ---
+### --- 3.1.2 Create High-Res Legends (Same as before) ----
 legend_fl <- bi_legend(pal = custom_pal_red,
                     dim = 3,
                     xlab = "Mayor Amenaza Inundaciones",
@@ -364,11 +368,37 @@ legend_fl <- bi_legend(pal = custom_pal_red,
     axis.title.y = element_text(size = 18, angle = 90)  # Customize Y label
   )
 
-
 ggsave(filename = "flood_biv_legend.png", plot = legend, bg = "transparent", 
        width = 4, height = 4, units = "in", dpi = 500)
 
-# --- 3. Plot Map  ---
+legend_dr <- bi_legend(pal = custom_pal_red,
+                       dim = 3,
+                       xlab = "Mayor Amenaza Seguía",
+                       ylab = "Mayor Vulnerabilidad",
+                       size = 12) + # Base size
+  theme(
+    axis.title.x = element_text(size = 18), # Customize X label
+    axis.title.y = element_text(size = 18, angle = 90)  # Customize Y label
+  )
+
+ggsave(filename = "dr_biv_legend.png", plot = legend, bg = "transparent", 
+       width = 4, height = 4, units = "in", dpi = 500)
+
+legend_ls <- bi_legend(pal = custom_pal_red,
+                       dim = 3,
+                       xlab = "Mayor Amenaza Deslaves",
+                       ylab = "Mayor Vulnerabilidad",
+                       size = 12) + # Base size
+  theme(
+    axis.title.x = element_text(size = 18), # Customize X label
+    axis.title.y = element_text(size = 18, angle = 90)  # Customize Y label
+  )
+
+ggsave(filename = "ls_biv_legend.png", plot = legend, bg = "transparent", 
+       width = 4, height = 4, units = "in", dpi = 500)
+
+
+### --- 3.1.3. Plot Maps  ----
 tmap_mode("plot")
 
 # Turning it off switches R to a "flat" mode (GEOS) which is much more forgiving of minor topology errors.
@@ -379,8 +409,9 @@ ab <- ab %>%
   filter(GID_0 != "SLV")
 
 # Layers for high risk districts
-high_risk_labels <- data_bivariate %>% 
-  filter(bi_class %in% c("3-3","2-3","3-2"))
+high_risk_labels_fl <- data_bivariate_fl %>% 
+  select(c(bi_class,NA3, NAM)) %>% 
+  filter(bi_class == "3-3")
 
 # Increase bbox to fit labels at the edges of the map# 1. Create a slightly larger bounding box (e.g., 5% bigger)
 bbox_new <- st_bbox(data_bivariate) # Get original box
@@ -409,7 +440,7 @@ flood_bivar_map <-
     lwd = 0.3           
   ) +
   # Main bivariate map
-  tm_shape(data_bivariate) +
+  tm_shape(data_bivariate_fl) +
   tm_polygons(
     fill = "bi_class",
     fill.scale = tm_scale_categorical(
@@ -422,7 +453,7 @@ flood_bivar_map <-
     lwd = 0.1
   ) + 
   # Labels for high risk districts
-  tm_shape(high_risk_labels) +
+  tm_shape(high_risk_labels_fl) +
   tm_labels_highlighted(
     text = "NAM",   # <--- Make sure this matches your column name (e.g., NAM_ADM2)
     size = 0.7,
@@ -457,7 +488,7 @@ print(flood_bivar_map)
 print(legend)
 
 
-## 3.2 Vulnerability IVMC + Exposure ----
+## 3.2 Vulnerability IVMC + Exposures ----
 
 # We use 'unname' so tmap maps the 1st color to "1", 2nd to "2", etc.
 clean_risk_pal <- unname(c(
