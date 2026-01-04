@@ -77,6 +77,7 @@ crs(haz) == crs(vul)
 haz <- haz %>% 
   select(c(risk_flood ,risk_lands, risk_droug, RiskFloodN,
            RiskLandN, RiskDrouN))
+
 # Reclass Exposure classes based on thresholds
 # For floods. Flood
   # Bajo	0 - 3.694764
@@ -110,7 +111,7 @@ haz <- haz %>%
     # Landslide Risk (Fixed typos and syntax)
     ls_risk_class = case_when(
       RiskLandN >= 0 & RiskLandN <= 2.60673 ~ "Bajo",
-      RiskLandN > 2.60673 & RiskLandN <= 4.252207 ~ "Medio", # Removed extra comma before ~
+      RiskLandN > 2.60673 & RiskLandN <= 4.252207 ~ "Medio",
       RiskLandN > 4.252207 & RiskLandN <= 5.3763989 ~ "Alto",
       RiskLandN > 5.3763989 & RiskLandN <= 10.0000 ~ "Extremo",
       TRUE ~ NA_character_
@@ -125,8 +126,6 @@ haz <- haz %>%
       TRUE ~ NA_character_
     )
   )
-
-
 
 # 2. PROCESS HAZARD INFORMATION ===============================================
 
@@ -159,6 +158,8 @@ flood_hazard <- ggplot(data = haz) +
   labs(title = "Evaluación de Amenaza de Inundación",
        subtitle = "Categorizado por Intensidad")
 
+flood_hazard
+
 landslide_hazard <- ggplot(data = haz) +
   # 1. Plot the geometry with no borders (color = NA)
   geom_sf(aes(fill = ls_risk_class), color = NA) +
@@ -174,6 +175,8 @@ landslide_hazard <- ggplot(data = haz) +
   theme_minimal() +
   labs(title = "Evaluación de Amenaza de Deslizamiento de Tierra",
        subtitle = "Categorizado por Intensidad")
+
+landslide_hazard
 
 landslide_drought <- ggplot(data = haz) +
   # 1. Plot the geometry with no borders (color = NA)
@@ -191,6 +194,15 @@ landslide_drought <- ggplot(data = haz) +
   labs(title = "Evaluación de Amenaza de Sequía",
        subtitle = "Categorizado por Intensidad")
 
+landslide_drought
+
+# Save the three maps
+ggsave(filename = paste0(dir,"maps/Flood_Hazard_Categories.png"), plot = flood_hazard, 
+       width = 8, height = 6, units = "in", dpi = 300)
+ggsave(filename = paste0(dir,"maps/Landslide_Hazard_Categories.png"), plot = landslide_hazard, 
+       width = 8, height = 6, units = "in", dpi = 300)
+ggsave(filename = paste0(dir,"maps/Drought_Hazard_Categories.png"), plot = landslide_drought, 
+       width = 8, height = 6, units = "in", dpi = 300)
 
 ## 2.2 Intersect vul and hazard and pop ----
 # Simplify vulnerability layer
@@ -216,8 +228,7 @@ risk_pop <- risk_pop %>%
 global(pop, fun = "sum", na.rm = TRUE)
 sum(risk_pop$wpop_2025, na.rm = T)
 
-# Summarise to obtain vulnerability and exposure results on a table at 
-# District level
+# Summarise to obtain vulnerability and exposure results on a table at District level
 risk_dist_fl <- risk_pop %>% 
   as.data.frame() %>% 
   group_by(NA3, fl_risk_class) %>% 
@@ -250,7 +261,6 @@ risk_dist_fl_wide <- risk_dist_fl %>%
          flood_medio = Medio,
          flood_bajo = Bajo)%>% 
   merge(vul,., by = 'NA3')
-
 
 
 risk_dist_dr_wide <- risk_dist_dr %>% 
@@ -289,6 +299,7 @@ risk_dist_ls_wide <- risk_dist_ls %>%
 ## 2.3 Join table to spatial ----
 
 # THESE ARE THE BASE FOR THE LAYERS AND THE EXCEL TABLES.
+# They Contain exposure and vulnerability information at district level
 risk_layer_fl_dist <- risk_dist_fl_wide
 risk_layer_dr_dist <- risk_dist_dr_wide
 risk_layer_ls_dist <- risk_dist_ls_wide
@@ -311,7 +322,7 @@ risk_layer_ls_dist <- risk_dist_ls_wide
 
 # 3. MAPPING RESULTS ===========================================================
 
-## 3.1 Flood Risk Bivariate Map ----
+## 3.1 Flood Drought and Landslide Risk Bivariate Map ----
 # --- Prepare Data & Palette ---
 
 # Importing lac admin boundaries 
@@ -323,31 +334,21 @@ ab <-  st_make_valid(st_as_sf(ab))
 # This palette moves from Light Grey (Low-Low) to Blue (High Flood) and Orange (High Vuln),
 # meeting at Red (High Risk) in the top-right corner (3-3).
 custom_pal_red <- c(
-  "1-1" = "#ffe0c4", # Low Flood, Low Vuln (Grey)
+  "1-1" = "#ffe0c4", # Low Exp, Low Vuln (Grey)
   "2-1" = "#fdae61",
-  "3-1" = "#ed771d", # High Flood, Low Vuln (Blue)
+  "3-1" = "#ed771d", # High Exp, Low Vuln (Blue)
   "1-2" = "#fecbae",
   "2-2" = "#f8926a",
   "3-2" = "#ef5d2e",
-  "1-3" = "#f49a9a", # Low Flood, High Vuln (Orange/Pink)
+  "1-3" = "#f49a9a", # Low Exp, High Vuln (Orange/Pink)
   "2-3" = "#ee6867",
-  "3-3" = "#eb090b"  # High Flood, High Vuln (RED - High Risk)
+  "3-3" = "#eb090b"  # High Exp, High Vuln (RED - High Risk)
 )
 
-### --- 3.1.1 Prepare Data & Palette (Same as before) ----
+### --- 3.1.1 Prepare Data for Bivariate representation ----
+# Floods
 risk_layer_biv_fl <- risk_layer_fl_dist %>% 
   mutate(flood_exp_ext_alt = per_flood_extremo + per_flood_alto)
-
-# # Add a tiny random number to the problematic columns
-# risk_layer_biv_fl <- risk_layer_biv_fl %>%
-#   filter(!is.na(IVMC) & !is.na(flood_exp_ext_alt)) %>% # Remove NAs to create the legend
-#   mutate(
-#     # factor = 0.001 adds microscopic noise to separate identical values
-#     IVMC_jitter = jitter(IVMC, factor = 0.001), 
-#     flood_jitter = jitter(flood_exp_ext_alt, factor = 0.001)
-#   )
-
-#My variables are already categorical we do not need this
 
 
 data_bivariate_fl <- bi_class(st_as_sf(risk_layer_biv_fl),
@@ -357,7 +358,30 @@ data_bivariate_fl <- bi_class(st_as_sf(risk_layer_biv_fl),
                            dim = 3) %>% 
   filter(NA3 != '0000')
 
-### --- 3.1.2 Create High-Res Legends (Same as before) ----
+# Droughts
+risk_layer_biv_dr <- risk_layer_dr_dist %>% 
+  mutate(drought_exp_ext_alt = per_drought_extremo + per_drought_alto)
+
+data_bivariate_dr <- bi_class(st_as_sf(risk_layer_biv_dr),
+                              x = drought_exp_ext_alt,
+                              y = VUL_P,
+                              style = "fisher",
+                              dim = 3) %>% 
+  filter(NA3 != '0000')
+
+# Landslides
+risk_layer_biv_ls <- risk_layer_ls_dist %>% 
+  mutate(landslide_exp_ext_alt = per_landslide_extremo + per_landslide_alto)
+
+
+data_bivariate_ls <- bi_class(st_as_sf(risk_layer_biv_ls),
+                              x = landslide_exp_ext_alt,
+                              y = VUL_P,
+                              style = "fisher",
+                              dim = 3) %>% 
+  filter(NA3 != '0000')
+
+### --- 3.1.2 Create High-Res Legends for the three hazard scenarios ----
 legend_fl <- bi_legend(pal = custom_pal_red,
                     dim = 3,
                     xlab = "Mayor Amenaza Inundaciones",
