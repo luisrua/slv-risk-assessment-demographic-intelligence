@@ -58,15 +58,18 @@ pop <- rast(paste0(layers,"slv_pop_2025_CN_100m_R2025A_v1.tif"))
 
 # Hazard Areas from Google embedding and AI to determine 
 haz <- vect(paste0(layers,"SusceptibilidadInundaciónDeslaveSequía_SV_N.shp"))
+haz_eq <- vect(paste0(layers,"Susceptibilidad_DañosSismo_SV.gpkg"))
 
 # Check CRS is the same for the 3 layers
 crs(vul) == crs(pop)
 crs(haz) == crs(pop)
 crs(haz) == crs(vul)
-
+crs(haz_eq) == crs(vul)
+crs(haz_eq) == crs(pop)
 # Reproject everything to the raster projection as it is easier to reproject vector layers
 vul <- project(vul, crs(pop))
 haz <- project(haz, crs(pop))
+haz_eq <- project(haz_eq, crs(pop))
 
 # Check again
 crs(vul) == crs(pop)
@@ -77,6 +80,10 @@ crs(haz) == crs(vul)
 haz <- haz %>% 
   select(c(risk_flood ,risk_lands, risk_droug, RiskFloodN,
            RiskLandN, RiskDrouN))
+
+haz_eq <- haz_eq %>% 
+  select(c(risk_embed_seis, risk_phys_seis, risk_seismic ))
+
 
 # Reclass Exposure classes based on thresholds
 # For floods. Flood
@@ -138,7 +145,7 @@ haz$fl_risk_class <- factor(haz$fl_risk_class,
 haz$ls_risk_class <- factor(haz$ls_risk_class, 
        levels = c("Bajo", "Medio", "Alto", "Extremo"))
 
-haz$dr_risk_class <- factor(haz$ls_risk_class, 
+haz$dr_risk_class <- factor(haz$dr_risk_class, 
        levels = c("Bajo", "Medio", "Alto", "Extremo"))
 
 
@@ -178,7 +185,7 @@ landslide_hazard <- ggplot(data = haz) +
 
 landslide_hazard
 
-landslide_drought <- ggplot(data = haz) +
+drought_hazard <- ggplot(data = haz) +
   # 1. Plot the geometry with no borders (color = NA)
   geom_sf(aes(fill = dr_risk_class), color = NA) +
   scale_fill_manual(
@@ -194,15 +201,15 @@ landslide_drought <- ggplot(data = haz) +
   labs(title = "Evaluación de Amenaza de Sequía",
        subtitle = "Categorizado por Intensidad")
 
-landslide_drought
+drought_hazard
 
 # Save the three maps
-ggsave(filename = paste0(dir,"maps/Flood_Hazard_Categories.png"), plot = flood_hazard, 
-       width = 8, height = 6, units = "in", dpi = 300)
-ggsave(filename = paste0(dir,"maps/Landslide_Hazard_Categories.png"), plot = landslide_hazard, 
-       width = 8, height = 6, units = "in", dpi = 300)
-ggsave(filename = paste0(dir,"maps/Drought_Hazard_Categories.png"), plot = landslide_drought, 
-       width = 8, height = 6, units = "in", dpi = 300)
+# ggsave(filename = paste0(dir,"maps/Flood_Hazard_Categories.png"), plot = flood_hazard, 
+#        width = 8, height = 6, units = "in", dpi = 300)
+# ggsave(filename = paste0(dir,"maps/Landslide_Hazard_Categories.png"), plot = landslide_hazard, 
+#        width = 8, height = 6, units = "in", dpi = 300)
+# ggsave(filename = paste0(dir,"maps/Drought_Hazard_Categories.png"), plot = drought_hazard, 
+#        width = 8, height = 6, units = "in", dpi = 300)
 
 ## 2.2 Intersect vul and hazard and pop ----
 # Simplify vulnerability layer
@@ -434,8 +441,23 @@ ab <- ab %>%
 
 # Layers for high risk districts
 high_risk_labels_fl <- data_bivariate_fl %>% 
-  select(c(bi_class,NA3, NAM)) %>% 
+  select(c(bi_class,NA3, NAM, )) %>% 
   filter(bi_class == "3-3")
+
+# Restircting to 20 labels to make them fit in map the top 20 exp/vuln districts
+high_risk_labels_dr <- data_bivariate_dr %>%
+  select(c(bi_class, NA3, NAM, drought_exp_ext_alt, IVMC)) %>% # Make sure IVMC is selected
+  filter(bi_class == "3-3") %>%
+  arrange(desc(drought_exp_ext_alt), desc(IVMC)) %>%
+  slice(1:20)
+  
+high_risk_labels_ls <- data_bivariate_ls %>% 
+  select(c(bi_class,NA3, NAM, landslide_exp_ext_alt, IVMC)) %>% 
+  filter(bi_class == "3-3") %>% 
+  arrange(desc(landslide_exp_ext_alt), desc(IVMC)) %>%
+  slice(1:20)
+
+  
 
 # Increase bbox to fit labels at the edges of the map# 1. Create a slightly larger bounding box (e.g., 5% bigger)
 bbox_new <- st_bbox(data_bivariate_fl) # Get original box
@@ -450,11 +472,10 @@ bbox_new["xmax"] <- bbox_new["xmax"] + (0.05 * x_range)
 bbox_new["ymin"] <- bbox_new["ymin"] - (0.05 * y_range)
 bbox_new["ymax"] <- bbox_new["ymax"] + (0.05 * y_range)
 
-# data_bivariate <- data_bivariate %>% 
-#   filter(!is.na(bi_class)) %>% 
-#   filter(!grepl("NA", bi_class))
 
-# Set the map
+# Set the maps
+
+#### FLOOD RISK MAP ----------------------------------------
 flood_bivar_map <-
   # Background map
   tm_shape(ab, bbox = bbox_new) +
@@ -479,8 +500,8 @@ flood_bivar_map <-
   # Labels for high risk districts
   tm_shape(high_risk_labels_fl) +
   tm_labels_highlighted(
-    text = "NAM",   # <--- Make sure this matches your column name (e.g., NAM_ADM2)
-    size = 0.7,
+    text = "NAM", 
+    size = 0.6,
     col = "black",
       bgcol = "white",  
       bgcol_alpha = 0.5,
@@ -500,7 +521,7 @@ flood_bivar_map
 
 tmap_save(
   tm = flood_bivar_map, 
-  filename = paste0(dir,"maps/Bivariate_fl_Risk_Map.jpg"), 
+  filename = paste0(dir,"maps/Bivariate_Flood_Risk_Map.jpg"), 
   dpi = 300,        # 300 is standard print quality. Use 600 for high-res.
   width = 10,       # Width in inches
   height = 8        # Height in inches
@@ -511,164 +532,186 @@ tmap_save(
 print(flood_bivar_map)
 print(legend)
 
-
-## 3.2 Vulnerability IVMC + Exposures ----
-
-# We use 'unname' so tmap maps the 1st color to "1", 2nd to "2", etc.
-clean_risk_pal <- unname(c(
-  custom_pal_red["1-1"], 
-  custom_pal_red["2-1"], 
-  custom_pal_red["3-1"]
-))
-
-clean_vuln_pal <- unname(c(
-  custom_pal_red["1-1"], 
-  custom_pal_red["1-2"], 
-  custom_pal_red["1-3"]
-))
-
-# 1. Use the labels that biscale already created for you
-# We need these separate columns to make the side-by-side maps
-data_bivariate$bi_x <- str_sub(data_bivariate$bi_class, 1, 1)
-data_bivariate$bi_y <- str_sub(data_bivariate$bi_class, 3, 3)
-
-# 1. Get the breaks object
-breaks <- bi_class_breaks(data_bivariate, 
-                          x = flood_jitter,   # Your actual Risk column name
-                          y = IVMC_jitter, # Your actual Vuln column name
-                          style = "fisher",        # Must match your previous code
-                          dim = 3)
-
-exp_labels_text <- breaks$bi_x 
-vuln_labels_text <- breaks$bi_y
-
-# Trim label texts to remove negative values
-exp_labels_text[1] <- 0 
-vuln_labels_text[1] <- 0 
-
-# Verify they look right
-print(exp_labels_text) 
-print(vuln_labels_text)
-# Should output: [1] "0-0.0821" "0.0821-0.327" "0.327-0.67"
-
-# 2. Map Flood Risk (using the auto-generated labels)
-map_flood_exp <- 
-  tm_shape(ab, bbox = data_bivariate) +
+#### DROUGHT RISK MAP --------------------------------------
+drought_bivar_map <-
+  # Background map
+  tm_shape(ab, bbox = bbox_new) +
   tm_polygons(
     fill = "#f0f0f0",  
     col = "black",      
     lwd = 0.3           
   ) +
-  tm_shape(data_bivariate) +
+  # Main bivariate map
+  tm_shape(data_bivariate_dr) +
   tm_polygons(
-    fill = "bi_x",
+    fill = "bi_class",
     fill.scale = tm_scale_categorical(
-      values = clean_risk_pal,         
-      labels = exp_labels_text        # <--- Use the text directly
+      values = custom_pal_red, 
+      value.na = "grey80"  # <--- Explicitly define the color for NA values here
     ),
-    fill.legend = tm_legend(title = "Flood Exposure"),
-    col = "black", lwd = 0.1
+    fill.legend = tm_legend(show = FALSE),
+    col = "black",
+    col_alpha = 0.5,
+    lwd = 0.1
+  ) + 
+  # Labels for high risk districts
+  tm_shape(high_risk_labels_dr) +
+  tm_labels_highlighted(
+    text = "NAM",   
+    size = 0.6,
+    col = "black",
+    bgcol = "white",  
+    bgcol_alpha = 0.5,
+
+    options = opt_tm_labels(just = "center")
   ) +
-  tm_title("Component 1: Flood Exposure (pop ratio)") +
+  
+  tm_title("Análisis de Riesgo de Sequías - El Salvador",
+           size = 1) + 
+  tm_logo("dr_biv_legend.png", height = 5.5, position = c("left", "bottom")) +
   tm_layout(
     frame = FALSE,
     bg.color = "#dbf1ff"  # Light blue "Sea" color
     # inner.margins = c(0.1, 0.1, 0.1, 0.1) # Optional: Adds space between map and edge
   )
 
-# 3. Map Vulnerability (using the auto-generated labels)
-map_vuln <- 
-  tm_shape(ab, bbox = data_bivariate) +
-  tm_polygons(
-    fill = "#f0f0f0",  
-    col = "black",      
-    lwd = 0.3           
-  ) +
-  tm_shape(data_bivariate) +
-  tm_polygons(
-    fill = "bi_y",
-    fill.scale = tm_scale_categorical(
-      values = clean_vuln_pal,         
-      labels = vuln_labels_text        # <--- Use the text directly
-    ),
-    fill.legend = tm_legend(title = "Vulnerability Score - IVMC"),
-    col = "black", lwd = 0.1
-  ) +
-  tm_title("Component 2: Vulnerability - IVMC") + 
-  tm_layout(
-    frame = FALSE,
-    bg.color = "#dbf1ff"  # Light blue "Sea" color
-    # inner.margins = c(0.1, 0.1, 0.1, 0.1) # Optional: Adds space between map and edge
-  )
+drought_bivar_map
 
-# 4. Display Side-by-Side
-final_comparison <- tmap_arrange(map_flood_exp, map_vuln, ncol = 2)
-print(final_comparison)
-
-# 2. Save it using tmap_save
 tmap_save(
-  tm = final_comparison, 
-  filename = paste0(dir,"maps/fl_hazard_vs_IVMC.jpg"), 
-  width = 12,      # Width in inches
-  height = 6,      # Height in inches
-  units = "in",    # Unit for width/height
-  dpi = 300        # Resolution (300 is print quality)
+  tm = drought_bivar_map, 
+  filename = paste0(dir,"maps/Bivariate_Drought_Risk_Map.jpg"), 
+  dpi = 300,        # 300 is standard print quality. Use 600 for high-res.
+  width = 10,       # Width in inches
+  height = 8        # Height in inches
 )
 
-## 3.3 Map the Vulnerability Dimensions ----
+#### LANDSLIDES RISK MAP --------------------------------------
+
+landslide_bivar_map <-
+  # Background map
+  tm_shape(ab, bbox = bbox_new) +
+  tm_polygons(
+    fill = "#f0f0f0",  
+    col = "black",      
+    lwd = 0.3           
+  ) +
+  # Main bivariate map
+  tm_shape(data_bivariate_ls) +
+  tm_polygons(
+    fill = "bi_class",
+    fill.scale = tm_scale_categorical(
+      values = custom_pal_red, 
+      value.na = "grey80"  # <--- Explicitly define the color for NA values here
+    ),
+    fill.legend = tm_legend(show = FALSE),
+    col = "black",
+    col_alpha = 0.5,
+    lwd = 0.1
+  ) + 
+  # Labels for high risk districts
+  tm_shape(high_risk_labels_ls) +
+  tm_labels_highlighted(
+    text = "NAM",   
+    size = 0.6,
+    col = "black",
+    bgcol = "white",  
+    bgcol_alpha = 0.5,
+    options = opt_tm_labels(just = "center") 
+  ) +
+  
+  tm_title("Análisis de Riesgo de Deslizamientos de Tierra - El Salvador",
+           size = 1) + 
+  tm_logo("ls_biv_legend.png", height = 5.5, position = c("left", "bottom")) +
+  tm_layout(
+    frame = FALSE,
+    bg.color = "#dbf1ff"  # Light blue "Sea" color
+    # inner.margins = c(0.1, 0.1, 0.1, 0.1) # Optional: Adds space between map and edge
+  )
+
+landslide_bivar_map
+
+tmap_save(
+  tm = landslide_bivar_map, 
+  filename = paste0(dir,"maps/Bivariate_Landslide_Risk_Map.jpg"), 
+  dpi = 300,        # 300 is standard print quality. Use 600 for high-res.
+  width = 10,       # Width in inches
+  height = 8        # Height in inches
+)
+
+## 3.2 Map the Vulnerability Dimensions ----
+
+# --- 1. SETUP LISTS ---
 dims_to_map <- c("D1", "D2", "D3", "IVMC")
 
-palettes <- c(c("brewer.purples", "brewer.greens", "brewer.blues", "brewer.oranges"))
+# Fixed: Removed nested c()
+palettes <- c("brewer.purples", "brewer.greens", "brewer.blues", "brewer.oranges")
 
-titles <- c("Dimensión 1: Vulnerabilidad", 
-            "Dimensión 2: Adaptabilidad",
-            "Dimensión 3: Diferencial Demográfico",
-            "Indice de Vulnerabilidad Climática y Medioambiental - IVMC")
+titles <- c(
+  "Dimensión 1: Índice de Sensibilidad Ambiental y Climática del Hogar", 
+  "Dimensión 2: Índice de Capacidad Adaptativa del Hogar",
+  "Dimensión 3: Índice de Diferencial Demográfico del Hogar",
+  "Índice agregado de Vulnerabilidad Medioambiental y Climática - IVMC"
+)
 
+# Fixed: Renamed second "D1" to "D2"
+thresholds <- list(
+  "D1"   = c(0.417, 0.483, 0.549, 0.615),
+  "D2"   = c(0.598, 0.671, 0.744, 0.818), # <--- Fixed typo here
+  "D3"   = c(0.394, 0.405, 0.416, 0.428),
+  "IVMC" = c(0.449, 0.501, 0.554, 0.607)
+)
 
+# --- 2. LOOP ---
 for (i in 1:length(dims_to_map)) {
   
-  # Current variables for this iteration
-  var_name <- dims_to_map[i]
-  pal_name <- palettes[i]
+  var_name  <- dims_to_map[i]
+  pal_name  <- palettes[i]
   map_title <- titles[i]
   
   print(paste("Mapping:", var_name))
   
-  # Calculate Breaks & Labels Manually ---
-    # Get the data column for this dimension
-    vals <- data_bivariate[[var_name]]
+  # A. Get Raw Thresholds
+  raw_breaks <- thresholds[[var_name]]
   
-  # Calculate 3 quantile breaks (33%, 66%)
-  breaks <- quantile(vals, probs = c(0, 1/3, 2/3, 1), na.rm = TRUE)
-  b      <- round(breaks, 3) # Round to 2 decimals
+  if (is.null(raw_breaks)) stop(paste("Error: No thresholds found for", var_name))
   
-  # Create clean labels with symbols
-  # 1. Low:  "<= X"
-  # 2. Mid:  "X - Y"
-  # 3. High: "> Y"
+  # B. Prepare Breaks & Labels
+  # We extract the middle two numbers to define the "Medium" band
+  # Example: c(min, cut1, cut2, max)
+  cut1 <- raw_breaks[2]
+  cut2 <- raw_breaks[3]
+  
+  # Round for clean labels (e.g., "0.48")
+  c1_txt <- round(cut1, 3)
+  c2_txt <- round(cut2, 3)
+  
+  # C. Create SAFE Breaks for Mapping
+  # We use -Inf and Inf to ensure NO data is dropped (no grey polygons)
+  # The map will treat everything below cut1 as "Low" and everything above cut2 as "High"
+  safe_breaks <- c(-Inf, cut1, cut2, Inf)
+  
+  # D. Custom Labels
   custom_labels <- c(
-    paste0("< ", b[2]),
-    paste0(b[2], " - ", b[3]),
-    paste0("> ", b[3])
+    paste0("< ", c1_txt),           # Low
+    paste0(c1_txt, " - ", c2_txt),  # Medium
+    paste0("> ", c2_txt)            # High
   )
   
-  # build the map
+  # --- 3. BUILD MAP ---
   vulnerability_map <- 
     # Context
     tm_shape(ab, bbox = bbox_new) +
     tm_polygons(fill = "#f0f0f0", col = "black", lwd = 0.3) +
     
     # Main Data
-    tm_shape(data_bivariate) +
+    tm_shape(data_bivariate_ls) +
     tm_polygons(
       fill = var_name,
       
-      # Use FIXED style with our custom logical labels
       fill.scale = tm_scale_intervals(
         style = "fixed", 
-        breaks = breaks,
-        labels = custom_labels, # <--- Insert the custom text here
+        breaks = safe_breaks,      # Use the safe -Inf/Inf breaks
+        labels = custom_labels,    # Use the clean text labels
         values = pal_name,
         value.na = "darkgrey"
       ),
@@ -676,7 +719,7 @@ for (i in 1:length(dims_to_map)) {
       col = "black", 
       lwd = 0.1, 
       col_alpha = 0.5,
-      fill.legend = tm_legend(title = "")
+      fill.legend = tm_legend(title = "") # No title needed since labels are self-explanatory
     ) +
     
     # Layout
@@ -687,33 +730,34 @@ for (i in 1:length(dims_to_map)) {
       legend.position = c("left", "bottom")
     )
   
-  # --- Step C: Save ---
+  # --- 4. SAVE ---
   tmap_save(
     tm = vulnerability_map,
-    filename = paste0(dir, "maps/Vulnerability_Map_", var_name, ".jpg"),
+    filename = paste0(dir, "maps/Vulnerability_Map_", var_name, ".png"),
     dpi = 300,
     width = 10,
     height = 8
   )
 }
+vulnerability_map
 
-## 3.4 Map Flood Hazard Zones ----
+## 3.3 Map Flood Hazard Zones ----
 
 flood_colors <- c("#eff3ff", "#bdd7e7", "#6baed6", "#08519c")
 
 # 2. Create the map
 flood_hazard_map <- 
-  
   # Background
   tm_shape(ab, bbox = bbox_new) +
   tm_polygons(fill = "#f0f0f0", col = "black", lwd = 0.3) +
   
   # Map
-  tm_shape(haz_flood) +
+  tm_shape(haz) +
   tm_polygons(
-    fill = "risk_class",
-    col  = "risk_class",   # <--- The Trick: Border matches Fill
-    lwd  = 0.5,            # Small width to bridge the gap
+    fill = "fl_risk_class",
+    col  = "fl_risk_class",   # <--- The Trick: Border matches Fill
+    lwd  = 0.5,
+    # Small width to bridge the gap
     
     # Define the same palette for BOTH fill and col
     fill.scale = tm_scale_categorical(values = flood_colors),
@@ -746,33 +790,173 @@ flood_hazard_map
 # Save
 tmap_save(
   tm = flood_hazard_map,
-  filename = paste0(dir, "maps/Flood_Hazard_SLV.jpg"),
+  filename = paste0(dir, "maps/Flood_Hazard_SLV.png"),
   dpi = 300,
   width = 10,
   height = 8
 )
 
-# Para el IVMC a lo mejor necesito los limites para los tramos de las leyendas y representacion
+## 3.4 Map Drought Hazard Zones ----
+
+colors <- c("#fff5eb", "#fdbe85", "#fd8d3c", "#d94701")
+
+
+# 2. Create the map
+# remove na tile somewhere in the map
+haz_dr <- haz %>% 
+  filter(!is.na(dr_risk_class))
+
+drought_hazard_map <- 
+  # Background
+  tm_shape(ab, bbox = bbox_new) +
+  tm_polygons(fill = "#f0f0f0", col = "black", lwd = 0.3) +
+  
+  # Map
+  tm_shape(haz_dr) +
+  tm_polygons(
+    fill = "dr_risk_class",
+    col  = "dr_risk_class",   # <--- The Trick: Border matches Fill
+    lwd  = 0.5,
+    # Small width to bridge the gap
+    
+    # Define the same palette for BOTH fill and col
+    fill.scale = tm_scale_categorical(values = colors),
+    col.scale  = tm_scale_categorical(values = colors),
+    
+    # Hide the extra legend generated by 'col'
+    col.legend  = tm_legend_hide(),
+    fill.legend = tm_legend(title = "Nivel de Amenaza",
+                            position = c("right", "top"))
+  ) +
+  # Text below title
+  tm_credits(
+    text = "Categorizado por Intensidad", 
+    size = 0.9,                 # Slightly smaller than title (default is ~1.0)
+    col = "grey30",             # Dark grey for visual hierarchy
+    position = c("left", "top") # Same position as title
+  ) +
+  
+  # Titles and Layout
+  tm_title("Evaluación de Amenaza de Sequías") +
+  tm_layout(
+    frame = FALSE,
+    inner.margins = c(0.05, 0.05, 0.05, 0.05),
+    bg.color = "#dbf1ff"  # Light blue "Sea" color
+  )
+
+# View it
+drought_hazard_map
+
+# Save
+tmap_save(
+  tm = flood_hazard_map,
+  filename = paste0(dir, "maps/Drought_Hazard_SLV.png"),
+  dpi = 300,
+  width = 10,
+  height = 8
+)
+
+## 3.5 Map Landslide Hazard Zones ----
+
+ls_colors <- c("#edf8e9", "#bae4b3", "#74c476", "#238b45")
+
+# 2. Create the map
+landslide_hazard_map <- 
+  # Background
+  tm_shape(ab, bbox = bbox_new) +
+  tm_polygons(fill = "#f0f0f0", col = "black", lwd = 0.3) +
+  
+  # Map
+  tm_shape(haz) +
+  tm_polygons(
+    fill = "fl_risk_class",
+    col  = "fl_risk_class",   # <--- The Trick: Border matches Fill
+    lwd  = 0.5,
+    # Small width to bridge the gap
+    
+    # Define the same palette for BOTH fill and col
+    fill.scale = tm_scale_categorical(values = ls_colors),
+    col.scale  = tm_scale_categorical(values = ls_colors),
+    
+    # Hide the extra legend generated by 'col'
+    col.legend  = tm_legend_hide(),
+    fill.legend = tm_legend(title = "Nivel de Amenaza",
+                            position = c("right", "top"))
+  ) +
+  # Text below title
+  tm_credits(
+    text = "Categorizado por Intensidad", 
+    size = 0.9,                 # Slightly smaller than title (default is ~1.0)
+    col = "grey30",             # Dark grey for visual hierarchy
+    position = c("left", "top") # Same position as title
+  ) +
+  
+  # Titles and Layout
+  tm_title("Evaluación de Amenaza de Deslizamientos de Tierra") +
+  tm_layout(
+    frame = FALSE,
+    inner.margins = c(0.05, 0.05, 0.05, 0.05),
+    bg.color = "#dbf1ff"  # Light blue "Sea" color
+  )
+
+# View it
+landslide_hazard_map
+
+# Save
+tmap_save(
+  tm = landslide_hazard_map,
+  filename = paste0(dir, "maps/Landslide_Hazard_SLV.png"),
+  dpi = 300,
+  width = 10,
+  height = 8
+)
+
+
+## 3.6 Side by Side Exp and Vulnerability map -----
+
+final_comparison <- tmap_arrange(flood_hazard_map, vulnerability_map, ncol = 2)
+print(final_comparison)
+
+# 2. Save it using tmap_save
+tmap_save(
+  tm = final_comparison,
+  filename = paste0(dir,"maps/fl_hazard_vs_IVMC.jpg"),
+  width = 12,      # Width in inches
+  height = 6,      # Height in inches
+  units = "in",    # Unit for width/height
+  dpi = 300        # Resolution (300 is print quality)
+)
 
 # 4. WORKING AROUND OUTPUTS ===================================================
 ## 4.1 Export layers to map risk in QGIS ----
 
-writeVector(vect(data_bivariate), paste0(dir,"layers/risk_assessment/slv_risk_assessment_districts.gpkg"),
-            layer = 'floods_dist_bivar',
+writeVector(vect(data_bivariate_fl), paste0(dir,"layers/risk_assessment/slv_risk_assessment_districts.gpkg"),
+            layer = 'data_bivariate_fl_dist',
             overwrite = T)
 
-## 4.2 Export Flood table into excel but clean names and fields ----
-names(data_bivariate)
+writeVector(vect(data_bivariate_dr), paste0(dir,"layers/risk_assessment/slv_risk_assessment_districts.gpkg"),
+            layer = 'data_bivariate_dr_dist',
+            insert = T)
 
-flood_risk_dist_table <- data_bivariate %>% 
+writeVector(vect(data_bivariate_ls), paste0(dir,"layers/risk_assessment/slv_risk_assessment_districts.gpkg"),
+            layer = 'data_bivariate_ls_dist',
+            insert = T)
+
+## 4.2 Export risk assessment tables into excel but clean formats, names and fields ----
+names(data_bivariate_fl)
+
+flood_risk_dist_table <- data_bivariate_fl %>% 
   as_data_frame() %>% 
   st_drop_geometry() %>% 
   arrange(NA3) %>% 
-  select(-c(bi_x, bi_y, IVMC_jitter, flood_jitter, geometry)) %>% 
+  select(-c(bi_x, bi_y, FCODE, geometry)) %>% 
+  relocate(NAM, .after = NA3) %>% 
+  relocate(c(VUL_P,P_VUL_1,  P_VUL_2, P_VUL_3,P_DEMO_1,P_DEMO_2, P_DEMO_3, 
+             P_SENS_1, P_SENS_2, P_SENS_3, P_ADAP_1, P_ADAP_2, P_ADAP_3), .after = bi_class) %>% 
   rename(
     `District Code` = NA3,
     `District Name` = NAM,
-    `Población Wpop 2025` = wpop_risk,
+    `Población Wpop 2025` = wpop,
     `Vulnerabilidad Sensibilidad` = D1,
     `Vulnerabilidad Adaptabilidad` = D2,
     `Vulnerabilidad Diferencial Demografico` = D3,
@@ -785,75 +969,192 @@ flood_risk_dist_table <- data_bivariate %>%
     `% Pobl. Amenaza Media Inundación` = per_flood_medio,
     `% Pobl. Amenaza Baja Inundación` = per_flood_bajo,
     `% Pobl. Amenaza Extrema + Alta Inundación` = flood_exp_ext_alt,
-    `Clase Riesgo Inundacion - IVMC` = bi_class)
+    `Clase Riesgo Inundacion - IVMC` = bi_class,
+    `Categoría dominante de vulnerabilidad global` = VUL_P ,
+    `% Pobl. en baja vulnerabilidad global` = P_VUL_1 ,  
+    `% Pobl. en vulnerabilidad global intermedia` = P_VUL_2 , 
+    `% Pobl. en alta vulnerabilidad global` = P_VUL_3 ,
+    `% Pobl. en baja presión/diferencial demográfico (D3)` = P_DEMO_1 ,
+    `% Pobl. en presión/diferencial demográfico (D3)` = P_DEMO_2, 
+    `% Pobl. en alta presión/diferencial demográfico (D3)` =  P_DEMO_3 , 
+    `% Pobl. en baja sensibilidad (D1)` = P_SENS_1, 
+    `% Pobl. en sensibilidad intermedia (D1)` = P_SENS_2, 
+    `% Pobl. en alta sensibilidad (D1)` =  P_SENS_3 , 
+    `% Pobl. en baja capacidad adaptativa (D2)` = P_ADAP_1 , 
+    `% Pobl. en capacidad adaptativa intermedia (D2)` = P_ADAP_2, 
+    `% Pobl. en alta capacidad adaptativa (D2)` = P_ADAP_3 )
+
+names(data_bivariate_dr)
+
+drought_risk_dist_table <- data_bivariate_dr %>% 
+  as_data_frame() %>% 
+  st_drop_geometry() %>% 
+  arrange(NA3) %>% 
+  select(-c(geometry, FCODE)) %>% 
+  relocate(NAM, .after = NA3) %>%
+  relocate(c(VUL_P,P_VUL_1,  P_VUL_2, P_VUL_3,P_DEMO_1,P_DEMO_2, P_DEMO_3, 
+             P_SENS_1, P_SENS_2, P_SENS_3, P_ADAP_1, P_ADAP_2, P_ADAP_3), .after = bi_class) %>% 
+  rename(    `District Code` = NA3,
+             `District Name` = NAM,
+             `Población Wpop 2025` = wpop,
+             `Vulnerabilidad Sensibilidad` = D1,
+             `Vulnerabilidad Adaptabilidad` = D2,
+             `Vulnerabilidad Diferencial Demografico` = D3,
+             `Pobl. Amenaza Extrema Sequía` = drought_extremo,
+             `Pobl. Amenaza Alta Sequía` = drought_alto,
+             `Pobl. Amenaza Media Sequía` = drought_medio,
+             `Pobl. Amenaza Baja Sequía` = drought_bajo,
+             `% Pobl. Amenaza Extrema Sequía` = per_drought_extremo,
+             `% Pobl. Amenaza Alta Sequía` = per_drought_alto,
+             `% Pobl. Amenaza Media Sequía` = per_drought_medio,
+             `% Pobl. Amenaza Baja Sequía` = per_drought_bajo,
+             `% Pobl. Amenaza Extrema + Alta Sequía` = drought_exp_ext_alt,
+             `Clase Riesgo Sequía - IVMC` = bi_class,
+             `Categoría dominante de vulnerabilidad global` = VUL_P ,
+             `% Pobl. en baja vulnerabilidad global` = P_VUL_1 ,  
+             `% Pobl. en vulnerabilidad global intermedia` = P_VUL_2 , 
+             `% Pobl. en alta vulnerabilidad global` = P_VUL_3 ,
+             `% Pobl. en baja presión/diferencial demográfico (D3)` = P_DEMO_1 ,
+             `% Pobl. en presión/diferencial demográfico (D3)` = P_DEMO_2, 
+             `% Pobl. en alta presión/diferencial demográfico (D3)` =  P_DEMO_3 , 
+             `% Pobl. en baja sensibilidad (D1)` = P_SENS_1, 
+             `% Pobl. en sensibilidad intermedia (D1)` = P_SENS_2, 
+             `% Pobl. en alta sensibilidad (D1)` =  P_SENS_3 , 
+             `% Pobl. en baja capacidad adaptativa (D2)` = P_ADAP_1 , 
+             `% Pobl. en capacidad adaptativa intermedia (D2)` = P_ADAP_2, 
+             `% Pobl. en alta capacidad adaptativa (D2)` = P_ADAP_3 )
+
+names(data_bivariate_ls)
+
+landslide_risk_dist_table <- data_bivariate_ls %>% 
+  as_data_frame() %>% 
+  st_drop_geometry() %>% 
+  arrange(NA3) %>% 
+  select(-c(geometry, FCODE, `NA`)) %>% 
+  relocate(NAM, .after = NA3) %>% 
+  relocate(c(VUL_P,P_VUL_1,  P_VUL_2, P_VUL_3,P_DEMO_1,P_DEMO_2, P_DEMO_3, 
+             P_SENS_1, P_SENS_2, P_SENS_3, P_ADAP_1, P_ADAP_2, P_ADAP_3), .after = bi_class) %>% 
+  rename(
+    `District Code` = NA3,
+    `District Name` = NAM,
+    `Población Wpop 2025` = wpop,
+    `Vulnerabilidad Sensibilidad` = D1,
+    `Vulnerabilidad Adaptabilidad` = D2,
+    `Vulnerabilidad Diferencial Demografico` = D3,
+    `Pobl. Amenaza Extrema Deslave` = landslide_extremo,
+    `Pobl. Amenaza Alta Deslave` = landslide_alto,
+    `Pobl. Amenaza Media Deslave` = landslide_medio,
+    `Pobl. Amenaza Baja Deslave` = landslide_bajo,
+    `% Pobl. Amenaza Extrema Deslave` = per_landslide_extremo,
+    `% Pobl. Amenaza Alta Deslave` = per_landslide_alto,
+    `% Pobl. Amenaza Media Deslave` = per_landslide_medio,
+    `% Pobl. Amenaza Baja Deslave` = per_landslide_bajo,
+    `% Pobl. Amenaza Extrema + Alta Deslave` = landslide_exp_ext_alt,
+    `Clase Riesgo Deslave - IVMC` = bi_class,
+    `Categoría dominante de vulnerabilidad global` = VUL_P ,
+    `% Pobl. en baja vulnerabilidad global` = P_VUL_1 ,  
+    `% Pobl. en vulnerabilidad global intermedia` = P_VUL_2 , 
+    `% Pobl. en alta vulnerabilidad global` = P_VUL_3 ,
+    `% Pobl. en baja presión/diferencial demográfico (D3)` = P_DEMO_1 ,
+    `% Pobl. en presión/diferencial demográfico (D3)` = P_DEMO_2, 
+    `% Pobl. en alta presión/diferencial demográfico (D3)` =  P_DEMO_3 , 
+    `% Pobl. en baja sensibilidad (D1)` = P_SENS_1, 
+    `% Pobl. en sensibilidad intermedia (D1)` = P_SENS_2, 
+    `% Pobl. en alta sensibilidad (D1)` =  P_SENS_3 , 
+    `% Pobl. en baja capacidad adaptativa (D2)` = P_ADAP_1 , 
+    `% Pobl. en capacidad adaptativa intermedia (D2)` = P_ADAP_2, 
+    `% Pobl. en alta capacidad adaptativa (D2)` = P_ADAP_3 )
 
 
-# Create a blank Workbook
 wb <- createWorkbook()
-
-# Add a Sheet
-sheet_name <- "Riesgo_Inundaciones_SLV"
-addWorksheet(wb, sheet_name)
-
-# Write the Data
-writeData(wb, sheet_name, flood_risk_dist_table, startRow = 1, startCol = 1)
-
-# Styles for excel table
 
 # Style 1: Header (Blue background, White Bold Text)
 header_style <- createStyle(
   fontSize = 11, 
   fontColour = "white", 
-  fgFill = "#08519c", # Blue color from your map
+  fgFill = "#08519c", 
   halign = "center", 
   valign = "center",
   textDecoration = "bold",
   border = "Bottom"
 )
 
-# Style 2: Percentage Columns 
-# "0.0%" format converts 0.12 to 12.0%
+# Style 2: Percentage Columns (e.g. 0.12 -> 12.0%)
 pct_style <- createStyle(numFmt = "0.0%") 
+pct_style2 <- createStyle(numFmt = "0.0\"%\"")
 
-# Style 3: Population/Number Columns (Comma separator)
+# Style 3: Number Columns (Comma separator)
 num_style <- createStyle(numFmt = "#,##0")
 
-# Style 4: Population ratios for vulnerability
+# Style 4: Ratio/Index Columns (3 decimal places)
 rat_style <- createStyle(numFmt = "0.000")
 
-# --- APPLY STYLES ---
 
-# Apply Header Style
-addStyle(wb, sheet_name, header_style, rows = 1, cols = 1:ncol(flood_risk_dist_table), gridExpand = TRUE)
+data_list <- list(
+  flood_risk_dist_table, 
+  drought_risk_dist_table,     # Replace with your actual variable name for drought
+  landslide_risk_dist_table    # Replace with your actual variable name for landslide
+)
 
-# Apply Percent Style to the specific columns (indices 11 to 14)
-addStyle(wb, sheet_name, pct_style, rows = 2:(nrow(flood_risk_dist_table)+1), cols = 12:16, gridExpand = TRUE)
+sheet_names <- c(
+  "Riesgo_Inundaciones_SLV", 
+  "Riesgo_Sequia_SLV", 
+  "Riesgo_Deslizamientos_SLV"
+)
 
-# Apply Number Style to Population columns (indices 7, 8, 9, 10)
-addStyle(wb, sheet_name, num_style, rows = 2:(nrow(flood_risk_dist_table)+1), cols =  7:11, gridExpand = TRUE)
 
-# Apply Ratio Style to Vulnerability columns (indices ., 4, 5, 6)
-addStyle(wb, sheet_name, rat_style, rows = 2:(nrow(flood_risk_dist_table)+1), cols = 3:6, gridExpand = TRUE)
+for (i in seq_along(data_list)) {
+  
+  # A. Extract current data and name for this iteration
+  current_df    <- data_list[[i]]
+  current_sheet <- sheet_names[i]
+  
+  print(paste("Processing sheet:", current_sheet)) # Optional progress tracker
+  
+  # B. Add Sheet & Write Data
+  addWorksheet(wb, current_sheet)
+  writeData(wb, current_sheet, current_df, startRow = 1, startCol = 1)
+  
+  # Header Style
+  addStyle(wb, current_sheet, header_style, 
+           rows = 1, cols = 1:ncol(current_df), gridExpand = TRUE)
+  
+  # Percent Style (Cols 12-16)
+  addStyle(wb, current_sheet, pct_style, 
+           rows = 2:(nrow(current_df)+1), cols = 12:16, gridExpand = TRUE)
+  # Percent Style (Cols 19:31)
+  addStyle(wb, current_sheet, pct_style2, 
+           rows = 2:(nrow(current_df)+1), cols = 19:31, gridExpand = TRUE)
+  
+  # Number Style (Cols 7-11)
+  addStyle(wb, current_sheet, num_style, 
+           rows = 2:(nrow(current_df)+1), cols = 7:11, gridExpand = TRUE)
+  
+  # Ratio Style (Cols 3-6)
+  addStyle(wb, current_sheet, rat_style, 
+           rows = 2:(nrow(current_df)+1), cols = 3:6, gridExpand = TRUE)
+  
+  # D. Formatting Layout
+  freezePane(wb, current_sheet, firstActiveRow = 2, firstActiveCol = 3)
+  setColWidths(wb, current_sheet, cols = 1:ncol(current_df), widths = "auto")
+}
 
-# Freeze the top row so it stays visible when scrolling
-freezePane(wb, sheet_name, firstRow = TRUE)
 
-# Auto-adjust column widths to fit the text
-setColWidths(wb, sheet_name, cols = 1:ncol(flood_risk_dist_table), widths = "auto")
-
-# Save the file
 saveWorkbook(wb, paste0(dir, "tables/SLV_Risk_Assessment.xlsx"), overwrite = TRUE)
+
 
 
 ## 4.3 Graphics to include in report ----
 
 ### 4.3.1 Top 10 Flood Risk % population ----
 # Filter for the top 10 districts by percentage risk
-top_risk <- data_bivariate %>% 
-  filter(bi_class %in% c("3-3","2-3","3-2")) %>% 
-  mutate(flood_exp_ext_alt = flood_exp_ext_alt*100)
+top_risk_fl <- data_bivariate_fl %>% 
+  filter(bi_class =="3-3") %>% 
+  mutate(flood_exp_ext_alt = flood_exp_ext_alt*100) %>% 
+  arrange(desc(flood_exp_ext_alt)) %>% 
+  slice(1:10)
   
-top_10_risk_chart <- ggplot(top_risk, 
+top_10_risk_chart <- ggplot(top_risk_fl, 
        # Reorder the District Name (Y-axis) based on the risk percentage (X-axis) 
        # so the highest risk is at the top.
        aes(x = flood_exp_ext_alt , 
@@ -861,7 +1162,7 @@ top_10_risk_chart <- ggplot(top_risk,
        )+
   
   # Create the bar geometry
-  geom_col(fill = "#0072B2", width = 0.7) + 
+  geom_col(fill = "#0072B2", width = 0.6) + 
   
   # Add risk percentage labels to the end of the bars
   geom_text(aes(label = paste0(round(flood_exp_ext_alt), "%")), 
@@ -885,8 +1186,9 @@ top_10_risk_chart <- ggplot(top_risk,
   ) +
   
   # Ensure the X-axis starts at 0 and doesn't exceed 100
-  scale_x_continuous(limits = c(0, max(top_risk$flood_exp_ext_alt) * 1.1),
-                     labels = function(x) paste0(x, "%"))
+  scale_x_continuous(limits = c(0, max(top_risk_fl$flood_exp_ext_alt) * 1.1),
+                     labels = function(x) paste0(x, "%")
+                     )
 
 top_10_risk_chart
 
@@ -901,8 +1203,11 @@ ggsave(
 )
 
 ### 4.3.2 Top 10 flood risk districts Population counts ---- 
-top_risk_pop <- top_risk %>% 
-  mutate(pop_risk_ext_alt = flood_extremo   + flood_alto )
+# Prepare data for top 10 ranking
+top_risk_pop <- data_bivariate_fl %>% 
+  mutate(pop_risk_ext_alt = flood_extremo   + flood_alto ) %>% 
+  arrange(desc(pop_risk_ext_alt)) %>% 
+  slice(1:10)
 
 top_10_risk_pop_chart <- ggplot(top_risk_pop, 
                             # Reorder the District Name (Y-axis) based on the risk percentage (X-axis) 
@@ -912,7 +1217,7 @@ top_10_risk_pop_chart <- ggplot(top_risk_pop,
 )+
   
   # Create the bar geometry
-  geom_col(fill = "orange", width = 0.7) + 
+  geom_col(fill = "orange", width = 0.6) + 
   
   # Add risk percentage labels to the end of the bars
   geom_label(aes(label = scales::comma(round(pop_risk_ext_alt,0), accuracy = 1)), 
@@ -956,9 +1261,132 @@ ggsave(
   bg = "white"  # CRITICAL: Ensures white background instead of transparent/black
 ) 
 
-### 4.3.3 Top Flood Risk Districts Vulnerability factors display.
+### 4.3.3 Top Flood Risk Districts Vulnerability factors display. ----
+
+# Filter for the top 10 districts by percentage risk
+top_risk_fl_vulnprof <- data_bivariate_fl %>% 
+  filter(bi_class =="3-3") %>% 
+  mutate(flood_exp_ext_alt = flood_exp_ext_alt*100) %>% 
+  arrange(desc(flood_exp_ext_alt)) %>% 
+  slice(1:10)
 
 
+top_risk_fl_vulnprof <- top_risk_fl_vulnprof %>% 
+  pivot_longer(
+    cols = c(P_SENS_3,P_ADAP_1, P_DEMO_3),
+    names_to = "Category",
+    values_to = "Value"
+  ) %>% 
+  mutate(Category = factor(Category, 
+                           levels = c("P_SENS_3", "P_ADAP_1", "P_DEMO_3"), # Bottom to Top
+                           labels = c("% pobl. en alta sensibilidad (D1)", "% pobl. en baja capacidad adaptativa (D2)", 
+                                      "% pobl. en alta presión/diferencial demográfico (D3)")))
+
+
+
+top10_Risk_fl_vulnprofile <- ggplot(top_risk_fl_vulnprof, 
+       aes(x = Value,  # <--- CHANGED: Removed '* 100' (Assumes data is already 0-100)
+           y = fct_reorder(NAM, flood_exp_ext_alt), 
+           fill = Category)) +
+  
+  # 1. Bars
+  geom_col(position = position_dodge(width = dodge_width), width = 0.7) +
+  
+  # 2. Labels
+  geom_text(aes(label = ifelse(Value > 1, paste0(round(Value, 0), "%"), "")), 
+            position = position_dodge(width = dodge_width),
+            hjust = -0.2, 
+            size = 3, 
+            color = "black") +
+  
+  # 3. Colors
+  scale_fill_manual(
+    values = c(
+      "% pobl. en alta sensibilidad"                    = "#d95f02",
+      "% pobl. en baja capacidad adaptativa"            = "#7570b3",
+      "% pobl. en alta presión/diferencial demográfico" = "#1b9e77"
+    )
+  ) +
+  
+  # 4. Layout
+  labs(
+    title = "Perfil de Vulnerabilidad en Distritos de Mayor Riesgo a Inundaciones",
+    subtitle = "Composición de factores sociales, demográficos y de capacidad",
+    x = "Porcentaje de Población (%)",
+    y = "Distrito",
+    fill = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    legend.position = "bottom",
+    panel.grid.major.y = element_blank()
+  ) +
+  
+  # 5. X Axis
+  # Since 'x' is now just 'Value' (e.g., 85), the labels will naturally be "85%"
+  # --- THIS IS THE FIX ---
+  # Forces the legend to have 1 column (vertical stack)
+  guides(fill = guide_legend(ncol = 1)) +
+  
+  scale_x_continuous(labels = function(x) paste0(x, "%"), expand = expansion(mult = c(0, 0.15))
+                     )
+
+ggsave(
+  filename = paste0(dir, "maps/Top10_Risk_fl_vulnprofile.jpg"), # Saving to your existing maps folder
+  plot = top10_Risk_fl_vulnprofile,
+  device = "jpeg",
+  width = 8,    # Width in inches
+  height = 6,   # Height in inches
+  dpi = 300,    # High resolution for reports
+  bg = "white"  # CRITICAL: Ensures white background instead of transparent/black
+) 
+
+### 4.3.4 Population by Risk class ----
+risk_class_summary <- data_bivariate_fl %>%
+  st_drop_geometry() %>%
+  group_by(bi_class) %>%
+  summarise(Total_Population = sum(wpop, na.rm = TRUE)) %>%
+  mutate(bi_class = factor(bi_class, levels = c(
+    "1-1", "2-1", "3-1", 
+    "1-2", "2-2", "3-2", 
+    "1-3", "2-3", "3-3"
+  )))
+
+
+pop_by_risk_class_fl <- ggplot(risk_class_summary, aes(x = bi_class, y = Total_Population, fill = bi_class)) +
+  
+  # 1. Vertical Bars
+  geom_col(width = 0.7) +
+  
+  # 2. Add Population Labels (e.g., "150k")
+  geom_text(aes(label = scales::comma(Total_Population, accuracy = 1)), 
+            vjust = -0.5, 
+            size = 3) +
+  
+  # 3. Apply your EXACT Custom Palette
+  scale_fill_manual(values = custom_pal_red, guide = "none") +
+  
+  # 4. Titles
+  labs(
+    title = "Población Total por Clase de Riesgo a Inundaciones",
+    subtitle = "Exposición a inundaciones (1-3) vs Vulnerabilidad (1-3)",
+    x = "Clase de Riesgo (Exp - Vuln)",
+    y = "Población Total"
+  ) +
+  
+  # 5. Theme & formatting
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    panel.grid.major.x = element_blank(),
+    axis.text.x = element_text(face = "bold") # Make the 1-1, 3-3 labels bold
+  ) +
+  
+  # 6. Expand Y axis for labels
+  scale_y_continuous(labels = scales::comma, expand = expansion(mult = c(0, 0.15))) 
+
+pop_by_risk_class_fl
 # Graph 
 # TO DO
 
