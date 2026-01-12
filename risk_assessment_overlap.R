@@ -1980,9 +1980,268 @@ pop_by_risk_class_ls
 ggsave(filename = paste0(dir, "maps/Pop_by_risk_class_Landslide.jpg"), 
        plot = pop_by_risk_class_ls, device = "jpeg", width = 8, height = 6, dpi = 300, bg = "white")
 
-## 4.3.13 
 
-# Graph 
+### 4.3.13Top 10 Seismic Risk % population ----
+# Note: I am assuming your exposure column is named 'seismic_exp_ext_alt' 
+# and total risk columns are 'seismic_extremo' and 'seismic_alto'.
+# If your columns are named 'eq_exp...' or similar, please swap "seismic" for "eq".
+
+top_risk_eq <- data_bivariate_eq %>% 
+  filter(bi_class == "3-3") %>% 
+  mutate(equake_exp_ext_alt   = equake_exp_ext_alt   * 100) %>% 
+  arrange(desc(equake_exp_ext_alt  )) %>% 
+  slice(1:10)
+
+top_10_risk_chart_eq <- ggplot(top_risk_eq, 
+                               aes(x = equake_exp_ext_alt  , 
+                                   y = fct_reorder(NAM, equake_exp_ext_alt))) +
+  
+  # Bar geometry (Using a Deep Red/Brick color for Seismic to distinguish from Drought)
+  geom_col(fill = "#810f7c", width = 0.6) + 
+  
+  geom_text(aes(label = paste0(round(equake_exp_ext_alt), "%")), 
+            hjust = -0.1, size = 3, col = "#333333") +
+  
+  labs(
+    title = "Riesgo Sísmico: 10 Distritos con Mayor\nAfectación Poblacional en Porcentaje",
+    x = "% de población en zonas de amenaza sísmica extrema y alta (%)",
+    y = "Distrito"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.title.x = element_text(margin = margin(t = 10)),
+    axis.title.y = element_text(margin = margin(r = 10))
+  ) +
+  scale_x_continuous(limits = c(0, max(top_risk_eq$equake_exp_ext_alt) * 1.1),
+                     labels = function(x) paste0(x, "%"))
+
+top_10_risk_chart_eq
+# Save
+ggsave(filename = paste0(dir, "maps/Top10_Risk_Chart_per_Seismic.jpg"), 
+       plot = top_10_risk_chart_eq, device = "jpeg", width = 8, height = 6, dpi = 300, bg = "white")
+
+
+### 4.3.14 Top 10 Seismic risk districts Population counts ---- 
+top_risk_pop_eq <- data_bivariate_eq %>% 
+  # Ensure 'seismic_extremo' and 'seismic_alto' exist in your data_bivariate_eq
+  mutate(pop_risk_ext_alt = eq_extremo + eq_alto) %>% 
+  arrange(desc(pop_risk_ext_alt)) %>% 
+  slice(1:10)
+
+top_10_risk_pop_chart_eq <- ggplot(top_risk_pop_eq, 
+                                   aes(x = pop_risk_ext_alt, 
+                                       y = fct_reorder(NAM, pop_risk_ext_alt))) +
+  
+  geom_col(fill = "#810f7c", width = 0.6) + 
+  
+  geom_label(aes(label = scales::comma(round(pop_risk_ext_alt,0), accuracy = 1)), 
+             hjust = -0.1, size = 3, col = "#333333", fill = 'white', label.size = 0) +
+  
+  labs(
+    title = "Riesgo Sísmico: 10 Distritos con Mayor \nAfectación Poblacional Total",
+    x = "Población en zonas de amenaza sísmica extrema y alta (hab.)",
+    y = "Distrito"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.title.x = element_text(margin = margin(t = 10)),
+    axis.title.y = element_text(margin = margin(r = 10))
+  ) +
+  scale_x_continuous(labels = scales::comma, 
+                     limits = c(0, max(top_risk_pop_eq$pop_risk_ext_alt) * 1.15)
+  )
+top_10_risk_pop_chart_eq
+
+# Save
+ggsave(filename = paste0(dir, "maps/Top10_Risk_Chart_pop_Seismic.jpg"), 
+       plot = top_10_risk_pop_chart_eq, device = "jpeg", width = 8, height = 6, dpi = 300, bg = "white")
+
+
+### 4.3.15 Top Seismic Risk Districts Vulnerability factors display ----
+top_risk_eq_vulnprof <- data_bivariate_eq %>% 
+  filter(bi_class == "3-3") %>% 
+  mutate(equake_exp_ext_alt = equake_exp_ext_alt * 100) %>% 
+  arrange(desc(equake_exp_ext_alt)) %>% 
+  slice(1:10) %>% 
+  pivot_longer(
+    cols = c(P_SENS_3, P_ADAP_1, P_DEMO_3),
+    names_to = "Category",
+    values_to = "Value"
+  ) %>% 
+  mutate(Category = factor(Category, 
+                           levels = c("P_SENS_3", "P_ADAP_1", "P_DEMO_3"), 
+                           labels = c("% pobl. en alta sensibilidad (D1)", 
+                                      "% pobl. en baja capacidad adaptativa (D2)", 
+                                      "% pobl. en alta presión/diferencial demográfico (D3)")))
+
+plot_top10_Risk_eq_vulnprof <- ggplot(top_risk_eq_vulnprof, 
+                                      aes(x = Value, y = fct_reorder(NAM, equake_exp_ext_alt), fill = Category)) +
+  
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  
+  geom_text(aes(label = ifelse(Value > 1, paste0(round(Value, 0), "%"), "")), 
+            position = position_dodge(width = 0.7), hjust = -0.2, size = 2, color = "black") +
+  
+  scale_fill_manual(
+    values = c("% pobl. en alta sensibilidad (D1)" = "#d95f02",
+               "% pobl. en baja capacidad adaptativa (D2)" = "#7570b3",
+               "% pobl. en alta presión/diferencial demográfico (D3)" = "#1b9e77")) +
+  
+  labs(
+    title = "Perfil de Vulnerabilidad en Distritos de Mayor Riesgo Sísmico",
+    subtitle = "Composición de factores sociales, demográficos y de capacidad",
+    x = "Porcentaje de Población (%)", y = "Distrito", fill = NULL
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.position = "bottom", panel.grid.major.y = element_blank()) +
+  guides(fill = guide_legend(ncol = 1)) +
+  scale_x_continuous(labels = function(x) paste0(x, "%"), expand = expansion(mult = c(0, 0.15))
+  )
+plot_top10_Risk_eq_vulnprof
+
+# Save
+ggsave(filename = paste0(dir, "maps/Top10_Risk_Vulnprofile_Seismic.jpg"), 
+       plot = plot_top10_Risk_eq_vulnprof, device = "jpeg", width = 8, height = 6, dpi = 300, bg = "white")
+
+
+### 4.3.16 Population by Risk to Seismic Class ----
+# Reusing custom_pal_red. 
+risk_class_summary_eq <- data_bivariate_eq %>%
+  st_drop_geometry() %>%
+  mutate(bi_class = gsub("\\s+", "", as.character(bi_class))) %>% 
+  group_by(bi_class) %>%
+  summarise(Total_Population = sum(wpop, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(bi_class = factor(bi_class, levels = names(custom_pal_red)))
+
+pop_by_risk_class_eq <- ggplot(risk_class_summary_eq, aes(x = bi_class, y = Total_Population, fill = bi_class)) +
+  geom_col(width = 0.7) +
+  geom_text(aes(label = scales::comma(Total_Population, accuracy = 1)), vjust = -0.5, size = 3) +
+  scale_fill_manual(values = custom_pal_red, guide = "none") +
+  scale_x_discrete(labels = c(
+    "1-1" = "Vul Baja\nExp Baja",   "2-1" = "Vul Baja\nExp Media",   "3-1" = "Vul Baja\nExp Alta",
+    "1-2" = "Vul Media\nExp Baja",  "2-2" = "Vul Media\nExp Media",  "3-2" = "Vul Media\nExp Alta",
+    "1-3" = "Vul Alta\nExp Baja",   "2-3" = "Vul Alta\nExp Media",   "3-3" = "Vul Alta\nExp Alta"
+  )) +
+  labs(
+    title = "Población Total por Clase de Riesgo Sísmico",
+    subtitle = "Exposición sísmica (Exp.) vs Vulnerabilidad (Vul.)",
+    x = "Clase de Riesgo (Exposición - Vulnerabilidad)",
+    y = "Población Total"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    panel.grid.major.x = element_blank(),
+    axis.text.x = element_text(face = "bold", size = 8, angle = 45, hjust = 1)
+  ) +
+  scale_y_continuous(labels = scales::comma, expand = expansion(mult = c(0, 0.15))
+  )
+pop_by_risk_class_eq
+
+# Save
+ggsave(filename = paste0(dir, "maps/Pop_by_risk_class_Seismic.jpg"), 
+       plot = pop_by_risk_class_eq, device = "jpeg", width = 8, height = 6, dpi = 300, bg = "white")
+
+
+## 4.3.17 Mosaic Population by risk class by scenario
+# --- Step 1: Create Summary Tables for ALL 4 Hazards ---
+
+risk_class_summary_dr <- data_bivariate_dr %>%
+  st_drop_geometry() %>%
+  mutate(bi_class = gsub("\\s+", "", as.character(bi_class))) %>% 
+  group_by(bi_class) %>%
+  summarise(Total_Population = sum(wpop, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(Hazard = "Sequías") # Add label
+
+risk_class_summary_eq <- data_bivariate_eq %>%
+  st_drop_geometry() %>%
+  mutate(bi_class = gsub("\\s+", "", as.character(bi_class))) %>% 
+  group_by(bi_class) %>%
+  summarise(Total_Population = sum(wpop, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(Hazard = "Sismos")
+
+risk_class_summary_ls <- data_bivariate_ls %>%
+  st_drop_geometry() %>%
+  mutate(bi_class = gsub("\\s+", "", as.character(bi_class))) %>% 
+  group_by(bi_class) %>%
+  summarise(Total_Population = sum(wpop, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(Hazard = "Deslizamientos")
+
+risk_class_summary_fl <- data_bivariate_fl %>%
+  st_drop_geometry() %>%
+  mutate(bi_class = gsub("\\s+", "", as.character(bi_class))) %>% 
+  group_by(bi_class) %>%
+  summarise(Total_Population = sum(wpop, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(Hazard = "Inundaciones")
+
+
+# 1. Combine data (Ensure this step from the previous code is run)
+all_risk_data <- bind_rows(
+  risk_class_summary_dr %>% mutate(Hazard = "Sequías"),
+  risk_class_summary_eq %>% mutate(Hazard = "Sismos"),
+  risk_class_summary_ls %>% mutate(Hazard = "Deslizamientos"),
+  risk_class_summary_fl %>% mutate(Hazard = "Inundaciones")
+) %>%
+  mutate(bi_class = factor(bi_class, levels = names(custom_pal_red)))
+
+# 2. Plot with FIXED scales
+mosaic_plot_fixed <- ggplot(all_risk_data, aes(x = bi_class, y = Total_Population, fill = bi_class)) +
+  
+  geom_col(width = 0.7) +
+  
+  # CHANGE HERE: Removed 'scales = "free_y"'. 
+  # Now all panels share the same Y-axis range automatically.
+  facet_wrap(~Hazard, ncol = 2, scales = "free_x") + 
+  
+  geom_text(aes(label = scales::comma(Total_Population, accuracy = 1)), 
+            vjust = -0.5, size = 2.5) +
+  
+  scale_fill_manual(values = custom_pal_red, guide = "none") +
+  
+  scale_x_discrete(labels = c(
+    "1-1" = "Vul Naja\nExp Baja",   "2-1" = "Vul Baja\nExp Media",   "3-1" = "Vul Baja\nExp Alta",
+    "1-2" = "Vul Media\nExp Baja",   "2-2" = "Vul Media\nExp Media",   "3-2" = "Vul Media\nExp Alta",
+    "1-3" = "Vul Alta\nExp Baja",  "2-3" = "Vul Alta\nExp Media",  "3-3" = "Vul Alta\nExp Alta"
+  )) +
+  
+  labs(
+    title = "Comparación Directa de Población en Riesgo en El Salvador",
+    x = NULL,
+    y = "Población Total"
+  ) +
+  
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
+    strip.text = element_text(face = "bold", size = 12, color = "#333333"),
+    strip.background = element_rect(fill = "#f0f0f0", color = NA),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 7),
+    panel.grid.major.x = element_blank(),
+    panel.spacing = unit(1, "cm")
+  ) +
+  
+  # Set a single upper limit for ALL charts based on the absolute maximum value found in the data
+  scale_y_continuous(
+    labels = scales::comma, 
+    limits = c(0, max(all_risk_data$Total_Population) * 1.15), # Adds 15% headroom universally
+    expand = c(0,0)
+  )
+
+mosaic_plot_fixed
+
+# Save
+ggsave(filename = paste0(dir, "maps/Mosaic_Pop_by_Risk_Class.jpg"), 
+       plot = mosaic_plot_fixed, 
+       width = 14, height = 10, dpi = 300, bg = "white")
+ 
 # TO DO
 
 # Sacar tablas de resultados y graficos para exportar en imagen
