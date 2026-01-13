@@ -1243,16 +1243,16 @@ landslide_risk_dist_table <- data_bivariate_ls %>%
     `Vulnerabilidad Sensibilidad` = D1,
     `Vulnerabilidad Adaptabilidad` = D2,
     `Vulnerabilidad Diferencial Demografico` = D3,
-    `Pobl. Amenaza Extrema Deslave` = landslide_extremo,
-    `Pobl. Amenaza Alta Deslave` = landslide_alto,
-    `Pobl. Amenaza Media Deslave` = landslide_medio,
-    `Pobl. Amenaza Baja Deslave` = landslide_bajo,
-    `% Pobl. Amenaza Extrema Deslave` = per_landslide_extremo,
-    `% Pobl. Amenaza Alta Deslave` = per_landslide_alto,
-    `% Pobl. Amenaza Media Deslave` = per_landslide_medio,
-    `% Pobl. Amenaza Baja Deslave` = per_landslide_bajo,
-    `% Pobl. Amenaza Extrema + Alta Deslave` = landslide_exp_ext_alt,
-    `Clase Riesgo Deslave - IVMC` = bi_class,
+    `Pobl. Amenaza Extrema Deslizamiento` = landslide_extremo,
+    `Pobl. Amenaza Alta Deslizamiento` = landslide_alto,
+    `Pobl. Amenaza Media Deslizamiento` = landslide_medio,
+    `Pobl. Amenaza Baja Deslizamiento` = landslide_bajo,
+    `% Pobl. Amenaza Extrema Deslizamiento` = per_landslide_extremo,
+    `% Pobl. Amenaza Alta Deslizamiento` = per_landslide_alto,
+    `% Pobl. Amenaza Media Deslizamiento` = per_landslide_medio,
+    `% Pobl. Amenaza Baja Deslizamiento` = per_landslide_bajo,
+    `% Pobl. Amenaza Extrema + Alta Deslizamiento` = landslide_exp_ext_alt,
+    `Clase Riesgo Deslizamiento - IVMC` = bi_class,
     `Categoría dominante de vulnerabilidad global` = VUL_P ,
     `% Pobl. en baja vulnerabilidad global` = P_VUL_1 ,  
     `% Pobl. en vulnerabilidad global intermedia` = P_VUL_2 , 
@@ -2213,7 +2213,8 @@ mosaic_plot_fixed <- ggplot(all_risk_data, aes(x = bi_class, y = Total_Populatio
   )) +
   
   labs(
-    title = "Comparación Directa de Población en Riesgo en El Salvador",
+    title = "Análisis Comparativo de Población Expuesta por Nivel de Riesgo Multiamenaz",
+    subtitle = "Clasificación bivariada (Exposición vs. Vulnerabilidad) para Sequías, Sismos, Deslizamientos e Inundaciones en El Salvador",
     x = NULL,
     y = "Población Total"
   ) +
