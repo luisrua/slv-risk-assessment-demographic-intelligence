@@ -1293,7 +1293,7 @@ equake_risk_dist_table <- data_bivariate_eq %>%
     `% Pobl. Amenaza Media Seísmo` = per_eq_medio,
     `% Pobl. Amenaza Baja Seísmo` = per_eq_bajo,
     `% Pobl. Amenaza Extrema + Alta Inundación` = equake_exp_ext_alt,
-    `Clase Riesgo Inundacion - IVMC` = bi_class,
+    `Clase Riesgo Seísmo - IVMC` = bi_class,
     `Categoría dominante de vulnerabilidad global` = VUL_P ,
     `% Pobl. en baja vulnerabilidad global` = P_VUL_1 ,  
     `% Pobl. en vulnerabilidad global intermedia` = P_VUL_2 , 
