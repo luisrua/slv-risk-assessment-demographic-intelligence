@@ -913,6 +913,16 @@ flood_hazard_map <-
     fill.legend = tm_legend(title = "Nivel de Amenaza",
                             position = c("right", "top"))
   ) +
+  
+  # Placed after 'haz' to ensure it draws ON TOP
+  tm_shape(vul) +
+  tm_borders(col = "black", lwd = 0.5) + # tm_borders automatically has transparent fill
+  
+  tm_scalebar(
+    text.size = 0.6,
+    position = c("left", "bottom"), 
+    breaks = c(0,25,50)  # This alone determines the length.
+  ) +
     # Text below title
   tm_credits(
     text = "Categorizado por Intensidad", 
@@ -973,6 +983,16 @@ drought_hazard_map <-
     fill.legend = tm_legend(title = "Nivel de Amenaza",
                             position = c("right", "top"))
   ) +
+  # Placed after 'haz' to ensure it draws ON TOP
+  tm_shape(vul) +
+  tm_borders(col = "black", lwd = 0.5) + # tm_borders automatically has transparent fill
+  
+  tm_scalebar(
+    text.size = 0.6,
+    position = c("left", "bottom"), 
+    breaks = c(0,25,50)  # This alone determines the length.
+  ) +
+  
   # Text below title
   tm_credits(
     text = "Categorizado por Intensidad", 
@@ -994,7 +1014,7 @@ drought_hazard_map
 
 # Save
 tmap_save(
-  tm = flood_hazard_map,
+  tm = drought_hazard_map,
   filename = paste0(dir, "maps/Drought_Hazard_SLV.png"),
   dpi = 300,
   width = 10,
@@ -1014,8 +1034,8 @@ landslide_hazard_map <-
   # Map
   tm_shape(haz) +
   tm_polygons(
-    fill = "fl_risk_class",
-    col  = "fl_risk_class",   # <--- The Trick: Border matches Fill
+    fill = "ls_risk_class",
+    col  = "ls_risk_class",   # <--- The Trick: Border matches Fill
     lwd  = 0.5,
     # Small width to bridge the gap
     
@@ -1027,6 +1047,15 @@ landslide_hazard_map <-
     col.legend  = tm_legend_hide(),
     fill.legend = tm_legend(title = "Nivel de Amenaza",
                             position = c("right", "top"))
+  ) +
+  # Placed after 'haz' to ensure it draws ON TOP
+  tm_shape(vul) +
+  tm_borders(col = "black", lwd = 0.5) + # tm_borders automatically has transparent fill
+  
+  tm_scalebar(
+    text.size = 0.6,
+    position = c("left", "bottom"), 
+    breaks = c(0,25,50)  # This alone determines the length.
   ) +
   # Text below title
   tm_credits(
@@ -1082,6 +1111,15 @@ equake_hazard_map <-
     col.legend  = tm_legend_hide(),
     fill.legend = tm_legend(title = "Nivel de Amenaza",
                             position = c("right", "top"))
+  ) +
+  # Placed after 'haz' to ensure it draws ON TOP
+  tm_shape(vul) +
+  tm_borders(col = "black", lwd = 0.5) + # tm_borders automatically has transparent fill
+  
+  tm_scalebar(
+    text.size = 0.6,
+    position = c("left", "bottom"), 
+    breaks = c(0,25,50)  # This alone determines the length.
   ) +
   # Text below title
   tm_credits(
